@@ -79,17 +79,14 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   return (
     <div className="flex h-screen bg-[#f0f2f5] overflow-hidden font-sans text-[#001f3f]">
-      {/* CSV読込中のオーバーレイ */}
       {isUploading && (
         <div className="fixed inset-0 bg-[#001f3f]/90 z-[100] flex items-center justify-center text-white font-black">
           UPDATING...
         </div>
       )}
 
-      {/* 左サイドバー */}
       <div className="w-full md:w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl z-10">
         <div className="p-6 bg-[#001f3f] text-white">
-          {/* ヘッダーエリア: ここにログアウトを配置 */}
           <div className="flex justify-between items-start mb-6">
             <div>
               <h1 className="text-[10px] font-black tracking-[0.3em] text-orange-400 leading-none mb-1">SEIKUKAI</h1>
@@ -109,7 +106,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
             </div>
           </div>
 
-          {/* 検索・フィルタ */}
           <div className="space-y-3">
             <input 
               type="text" placeholder="名前・級で検索..." 
@@ -127,7 +123,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           </div>
         </div>
 
-        {/* 生徒リスト */}
         <div className="flex-1 overflow-y-auto bg-white divide-y divide-gray-50">
           {filteredStudents.map(s => (
             <button key={s.id} onClick={() => setSelectedStudent(s)}
@@ -142,7 +137,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         </div>
       </div>
 
-      {/* 右メインエリア */}
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-6 md:p-10">
         {selectedStudent ? (
           <EvaluationPanel 
@@ -161,7 +155,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   )
 }
 
-/* --- 評価パネル --- */
 function EvaluationPanel({ student, isMaster, onRefresh }: any) {
   const [criteria, setCriteria] = useState<any[]>([])
   const targetBelt = getTargetBelt(student?.kyu || '無級')
