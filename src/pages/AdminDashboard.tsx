@@ -1,172 +1,191 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase, Profile, Criterion } from '../lib/supabase'
 
-const getBeltTheme = (kyu: string) => {
-  if (!kyu || kyu === '無級') return { name: '白帯', bg: 'bg-white', text: 'text-gray-900', border: 'border-gray-200' };
-  if (kyu.includes('10級') || kyu.includes('9級')) return { name: '黄帯', bg: 'bg-yellow-400', text: 'text-yellow-900', border: 'border-yellow-500' };
-  if (kyu.includes('8級') || kyu.includes('7級')) return { name: '青帯', bg: 'bg-blue-600', text: 'text-white', border: 'border-blue-700' };
-  if (kyu.includes('6級') || kyu.includes('5級')) return { name: '橙・紫帯', bg: 'bg-orange-500', text: 'text-white', border: 'border-orange-600' };
-  if (kyu.includes('4級') || kyu.includes('3級')) return { name: '緑帯', bg: 'bg-green-600', text: 'text-white', border: 'border-green-700' };
-  if (kyu.includes('2級') || kyu.includes('1級')) return { name: '茶帯', bg: 'bg-amber-900', text: 'text-white', border: 'border-amber-950' };
-  if (kyu.includes('段')) return { name: '黒帯', bg: 'bg-gray-900', text: 'text-white', border: 'border-black' };
-  return { name: '白帯', bg: 'bg-white', text: 'text-gray-900', border: 'border-gray-200' };
+export default function AdminDashboard({ profile }: { profile: Profile }) {
+  const [tab, setTab] = useState('生徒一覧')
+  const [selectedStudent, setSelectedStudent] = useState<Profile | null>(null)
+  const isMaster = profile.login_email === 'mr.pepper0402@gmail.com'
+
+  return (
+    <div className="min-h-screen bg-gray-50 text-[#001f3f]">
+      {/* ヘッダー */}
+      <div className="bg-[#001f3f] px-6 py-4 flex justify-between items-center shadow-lg">
+        <div>
+          <h1 className="text-white font-black text-lg tracking-[0.2em]">誠空会 管理</h1>
+          <p className="text-[8px] text-white/40 font-bold uppercase">{isMaster ? 'Master Admin' : 'Branch Manager'}</p>
+        </div>
+        <button onClick={() => supabase.auth.signOut()} className="text-white/60 text-[10px] font-bold border border-white/20 rounded-full px-4 py-1.5 hover:bg-white/10 transition-all">ログアウト</button>
+      </div>
+
+      <div className="flex bg-[#001f3f] border-t border-white/10 sticky top-0 z-10">
+        {['生徒一覧', '評価入力', '審査基準'].map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`flex-1 py-4 text-[10px] font-black tracking-widest transition-all ${tab === t ? 'text-white border-b-4 border-[#ff6600]' : 'text-white/40'}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div className="max-w-lg mx-auto pb-10">
+        {tab === '生徒一覧' && <StudentsTab onSelect={(s) => { setSelectedStudent(s); setTab('評価入力'); }} />}
+        {tab === '評価入力' && <EvalTab student={selectedStudent} isMaster={isMaster} onBack={() => setTab('生徒一覧')} />}
+        {tab === '審査基準' && <div className="p-10 text-center text-gray-300 font-bold uppercase tracking-widest">Settings Mode</div>}
+      </div>
+    </div>
+  )
 }
 
-const gradeToScore = (grade: string | null) => {
-  if (grade === 'A') return 2.5;
-  if (grade === 'B') return 1.5;
-  if (grade === 'C') return 0.5;
-  if (grade === 'D') return 0;
-  return 0;
-};
-
-export default function StudentPortal({ profile }: { profile: Profile }) {
-  const [currentCriteria, setCurrentCriteria] = useState<any[]>([])
+function StudentsTab({ onSelect }: { onSelect: (s: Profile) => void }) {
+  const [students, setStudents] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
-  const [isSettingsMode, setIsSettingsMode] = useState(false)
-  
-  const theme = getBeltTheme(profile.kyu)
+  const [branchFilter, setBranchFilter] = useState('すべて')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase.from('profiles').select('*').eq('is_admin', false).order('name')
+    setStudents(data || [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (event) => {
+      const text = event.target?.result as string
+      const lines = text.split('\n')
+      const updates = lines.slice(1).map(line => {
+        const v = line.split(',').map(s => s.trim())
+        if (v.length < 9) return null
+        // 支部情報がCSVのどこか（例: 10列目）にある想定。なければ「未設定」
+        return { name: v[1] + v[2], login_email: v[8], kyu: v[7] || '無級', is_admin: false }
+      }).filter(item => item && item.login_email) as any[]
+      
+      const { error } = await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
+      if (error) alert(error.message); else { alert(`${updates.length}名の名簿を更新しました。`); load(); }
+    }
+    reader.readAsText(file)
+  }
+
+  // 支部のリスト（仮）
+  const branches = ['すべて', '池田', '川西', '宝塚']
+  const filteredStudents = branchFilter === 'すべて' 
+    ? students 
+    : students.filter(s => (s as any).branch === branchFilter) // DBにbranchカラムがある想定
+
+  if (loading) return <div className="flex justify-center py-20 animate-spin">🌀</div>
+
+  return (
+    <div className="p-4">
+      {/* CSV読込ボタン復活 */}
+      <div className="mb-6">
+        <label className="flex items-center justify-center gap-2 bg-white border-2 border-dashed border-gray-200 p-4 rounded-2xl cursor-pointer hover:bg-gray-50 transition-all">
+          <span className="text-xs font-black text-[#001f3f]">名簿CSVを読み込む</span>
+          <input type="file" accept=".csv" className="hidden" onChange={handleCsvUpload} />
+        </label>
+      </div>
+
+      {/* 支部フィルター */}
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
+        {branches.map(b => (
+          <button key={b} onClick={() => setBranchFilter(b)}
+            className={`flex-shrink-0 px-4 py-2 rounded-full text-[10px] font-black tracking-widest transition-all ${branchFilter === b ? 'bg-[#ff6600] text-white' : 'bg-white text-gray-400 border border-gray-100'}`}>
+            {b}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        {filteredStudents.map(s => (
+          <button key={s.id} onClick={() => onSelect(s)} className="w-full bg-white p-5 rounded-[2rem] border border-gray-100 flex justify-between items-center shadow-sm active:scale-95 transition-all">
+            <div className="text-left">
+              <p className="font-black text-[#001f3f]">{s.name}</p>
+              <p className="text-[9px] font-bold text-gray-300 uppercase">{s.kyu} | {(s as any).branch || '支部未設定'}</p>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-[#ff6600]">→</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function EvalTab({ student, isMaster, onBack }: { student: Profile | null, isMaster: boolean, onBack: () => void }) {
+  const [criteria, setCriteria] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!student) return
     async function loadData() {
       setLoading(true)
-      const { data: criteriaData } = await supabase
-        .from('criteria')
-        .select('*')
-        .eq('dan', theme.name.split('・')[0])
-        .order('id', { ascending: true })
-
-      const { data: scoresData } = await supabase
-        .from('evaluations')
-        .select('*')
-        .eq('student_id', profile.id)
-
-      const combined = (criteriaData || []).map(c => ({
+      const { data: crit } = await supabase.from('criteria').select('*').order('id')
+      const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
+      const combined = (crit || []).map(c => ({
         ...c,
-        grade: scoresData?.find(s => s.criterion_id === c.id)?.grade || null
-      }));
-
-      setCurrentCriteria(combined)
+        grade: evals?.find(e => e.criterion_id === c.id)?.grade || null
+      }))
+      setCriteria(combined)
       setLoading(false)
     }
     loadData()
-  }, [profile.id, theme.name])
+  }, [student])
 
-  const totalScore = currentCriteria.reduce((acc, curr) => acc + gradeToScore(curr.grade), 0);
-  const isEligible = totalScore >= 80;
-
-  if (loading) return <div className="flex justify-center py-20 text-gray-300 font-black animate-pulse">SEIKUKAI Loading...</div>
-
-  // --- 設定画面（パスワード変更など） ---
-  if (isSettingsMode) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6 text-[#001f3f]">
-        <button onClick={() => setIsSettingsMode(false)} className="mb-8 font-black text-[#ff6600] text-sm">← 戻る</button>
-        <h2 className="text-2xl font-black mb-6">登録情報の変更</h2>
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-6">
-          <p className="text-xs text-gray-400 leading-relaxed">メールアドレスやパスワードの変更は、Supabaseのセキュリティ設定に基づき、送信される確認メールからのお手続きとなります。</p>
-          <button 
-            onClick={() => alert('パスワード再設定メールを送信しました（実装例）')}
-            className="w-full bg-[#001f3f] text-white py-4 rounded-2xl font-black text-sm"
-          >
-            パスワードを変更する
-          </button>
-          <button 
-            onClick={() => supabase.auth.signOut()}
-            className="w-full border-2 border-red-100 text-red-500 py-4 rounded-2xl font-black text-sm"
-          >
-            ログアウト
-          </button>
-        </div>
-      </div>
-    )
+  const saveGrade = async (criterionId: number, grade: string) => {
+    if (!student) return
+    setCriteria(prev => prev.map(c => c.id === criterionId ? { ...c, grade } : c))
+    await supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: criterionId, grade }, { onConflict: 'student_id,criterion_id' })
   }
 
+  // マスター専用：級の更新機能
+  const updateKyu = async (newKyu: string) => {
+    if (!student || !isMaster) return
+    const { error } = await supabase.from('profiles').update({ kyu: newKyu }).eq('id', student.id)
+    if (!error) alert(`級を ${newKyu} に更新しました`);
+  }
+
+  if (!student) return null
+
   return (
-    <div className="min-h-screen bg-[#f8f9fa] pb-10 text-[#001f3f]">
-      {/* 改善版ヘッダー */}
-      <div className={`${theme.bg} ${theme.text} px-6 pt-8 pb-16 rounded-b-[50px] shadow-xl relative overflow-hidden`}>
-        {/* 見切れ防止のため位置とサイズを調整 */}
-        <div className="absolute top-4 right-[-20px] opacity-[0.07] text-7xl font-black italic pointer-events-none whitespace-nowrap">
-          {theme.name}
-        </div>
+    <div className="p-4">
+      <button onClick={onBack} className="text-[10px] font-black text-[#ff6600] mb-4">← BACK TO LIST</button>
+      
+      <div className="bg-[#001f3f] p-6 rounded-[2.5rem] text-white mb-6">
+        <h2 className="text-2xl font-black mb-1">{student.name}</h2>
+        <p className="text-[10px] font-bold opacity-50 uppercase tracking-widest">{student.kyu}</p>
         
-        <div className="relative z-10">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60 mb-1">Seikukai Portal</p>
-              <h1 className="text-3xl font-black tracking-tighter">{profile.name}</h1>
-            </div>
-            {/* 設定・ログアウトボタン */}
-            <div className="flex gap-2">
-              <button 
-                onClick={() => setIsSettingsMode(true)}
-                className="w-10 h-10 bg-black/5 backdrop-blur-md rounded-full flex items-center justify-center border border-black/5"
-              >
-                ⚙️
-              </button>
-              <button 
-                onClick={() => supabase.auth.signOut()}
-                className="w-10 h-10 bg-black/5 backdrop-blur-md rounded-full flex items-center justify-center border border-black/5"
-              >
-                🚪
-              </button>
-            </div>
+        {isMaster && (
+          <div className="mt-4 pt-4 border-t border-white/10">
+            <p className="text-[8px] font-black text-[#ff6600] mb-2 uppercase">Master Action: 昇級・合否決定</p>
+            <select 
+              onChange={(e) => updateKyu(e.target.value)}
+              className="bg-white/10 text-xs font-bold w-full p-3 rounded-xl border-none outline-none"
+            >
+              <option value="">級を変更する</option>
+              {['無級','10級','9級','8級','7級','6級','5級','4級','3級','2級','1級','初段'].map(k => (
+                <option key={k} value={k} className="text-black">{k}</option>
+              ))}
+            </select>
           </div>
-          <span className="bg-black/10 px-4 py-1.5 rounded-full text-[10px] font-black backdrop-blur-sm border border-white/10">
-            {profile.kyu || '無級'}
-          </span>
-        </div>
+        )}
       </div>
 
-      <div className="px-5 -mt-10 relative z-20">
-        {/* スコアカード（変更なし） */}
-        <div className="bg-white rounded-[32px] p-6 shadow-2xl border border-white/50 mb-8">
-          <div className="flex justify-between items-end mb-4 text-[#001f3f]">
-            <div>
-              <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-1">Score</p>
-              <p className="text-5xl font-black tracking-tighter">{totalScore}<span className="text-sm ml-1 opacity-20">/100</span></p>
+      <div className="space-y-4">
+        {criteria.filter(c => c.dan === (student.kyu === '無級' ? '白帯' : '該当帯')).map(c => (
+          <div key={c.id} className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm">
+            <p className="text-[8px] font-black text-gray-300 uppercase mb-1">{c.examination_type}</p>
+            <p className="text-sm font-bold mb-4">{c.examination_content}</p>
+            <div className="grid grid-cols-4 gap-2">
+              {['A', 'B', 'C', 'D'].map(g => (
+                <button key={g} onClick={() => saveGrade(c.id, g)}
+                  className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#ff6600] text-white shadow-lg' : 'bg-gray-50 text-gray-300'}`}>
+                  {g}
+                </button>
+              ))}
             </div>
-            {isEligible ? (
-              <div className="bg-[#ff6600] text-white px-5 py-2.5 rounded-2xl font-black text-[10px] animate-bounce shadow-lg shadow-orange-200">審査可能！</div>
-            ) : (
-              <div className="text-right">
-                <p className="text-[10px] font-black text-[#ff6600]">あと {80 - totalScore}点</p>
-              </div>
-            )}
           </div>
-          <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-            <div 
-              className={`h-full rounded-full transition-all duration-1000 ${isEligible ? 'bg-green-500' : 'bg-[#ff6600]'}`}
-              style={{ width: `${Math.min(totalScore, 100)}%` }}
-            ></div>
-          </div>
-        </div>
-
-        {/* 審査項目一覧（変更なし） */}
-        <div className="space-y-3">
-          {currentCriteria.map((c) => (
-            <div key={c.id} className="bg-white rounded-[24px] p-4 flex items-center gap-4 shadow-sm border border-gray-100">
-              <div className={`flex-shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl border-2 ${
-                c.grade === 'A' ? 'bg-orange-50 border-[#ff6600] text-[#ff6600]' : 
-                c.grade === 'B' ? 'bg-orange-50/50 border-orange-200 text-[#ff6600]/70' :
-                c.grade ? 'bg-gray-50 border-gray-100 text-gray-400' : 
-                'bg-white border-dashed border-gray-200 text-gray-200'
-              }`}>
-                {c.grade || '-'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[9px] font-black text-gray-300 uppercase tracking-tighter mb-0.5">{c.examination_type}</p>
-                <p className="text-sm font-bold text-[#001f3f] leading-tight">{c.examination_content}</p>
-              </div>
-              {c.video_url && (
-                <a href={c.video_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 w-10 h-10 bg-red-50 text-red-500 rounded-full flex items-center justify-center shadow-inner">
-                  ▶
-                </a>
-              )}
-            </div>
-          ))}
-        </div>
+        ))}
       </div>
     </div>
   )
