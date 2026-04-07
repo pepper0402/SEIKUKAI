@@ -45,24 +45,42 @@ function StudentsTab({ onSelect }: { onSelect: (s: Profile) => void }) {
 
   useEffect(() => { load() }, [load])
 
+  // CSV読み込み機能
+  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (event) => {
+      const text = event.target?.result as string
+      const lines = text.split('\n')
+      const updates = lines.slice(1).map(line => {
+        const v = line.split(',').map(s => s.trim())
+        if (v.length < 9) return null
+        return { name: v[1] + v[2], login_email: v[8], kyu: v[7] || '無級', is_admin: false }
+      }).filter(item => item && item.login_email) as any[]
+      
+      const { error } = await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
+      if (error) alert(error.message); else { alert(`${updates.length}名の名簿を更新しました。`); load(); }
+    }
+    reader.readAsText(file)
+  }
+
+  // アカウント一括作成（パスワードを123456に強制）
   const runBatchRegistration = async () => {
     if (students.length === 0) return alert('名簿がありません')
-    if (!confirm(`制限解除はお済みですか？\n${students.length} 名のアカウント作成を再試行します。`)) return
+    if (!confirm(`全員のパスワードを「123456」で登録します。よろしいですか？`)) return
 
     setProcessing(true)
-    setLog(["再開します..."])
-    let success = 0
-    let skip = 0
+    setLog(["処理を開始します..."])
+    let success = 0, skip = 0, errorCount = 0
 
-    for (let i = 0; i < students.length; i++) {
-      const s = students[i]
+    for (const s of students) {
       const email = s.login_email.replace(/[\s\t\n\r　]/g, '').trim().toLowerCase()
-      
-      setLog(prev => [`⏳ ${s.name} を処理中...`, ...prev.slice(0, 4)])
+      if (!email.includes('@')) continue
 
       const { error } = await supabase.auth.signUp({
         email: email,
-        password: '1234',
+        password: '123456', // 6文字以上に修正
       })
 
       if (!error) {
@@ -72,17 +90,14 @@ function StudentsTab({ onSelect }: { onSelect: (s: Profile) => void }) {
         skip++
         setLog(prev => [`ℹ️ ${s.name}: 登録済み`, ...prev.slice(0, 5)])
       } else {
+        errorCount++
         setLog(prev => [`❌ ${s.name}: ${error.message}`, ...prev.slice(0, 5)])
-        // エラーが出た場合は1秒待機して再開
-        await new Promise(r => setTimeout(r, 1000))
       }
-
-      // 成功時も0.5秒待機してRate Limitを回避
-      await new Promise(r => setTimeout(r, 500))
+      await new Promise(r => setTimeout(r, 400))
     }
 
     setProcessing(false)
-    alert(`完了しました。\n新規成功: ${success}件\n登録済み: ${skip}件`)
+    alert(`完了！\n新規: ${success}名 / 登録済: ${skip}名 / エラー: ${errorCount}名`)
     load()
   }
 
@@ -90,31 +105,33 @@ function StudentsTab({ onSelect }: { onSelect: (s: Profile) => void }) {
 
   return (
     <div className="p-3">
-      <div className="mb-6 p-6 bg-[#001f3f] rounded-3xl shadow-xl text-center border-t-4 border-[#ff6600]">
-        <h3 className="text-white font-black text-sm mb-4 uppercase tracking-widest">アカウント一括作成ツール</h3>
-        
-        {processing ? (
-          <div className="bg-black/40 p-4 rounded-xl mb-4 text-left font-mono text-[11px] h-40 overflow-y-auto">
-            {log.map((line, idx) => (
-              <div key={idx} className={line.startsWith('✅') ? 'text-green-400' : line.startsWith('❌') ? 'text-red-400' : 'text-gray-400'}>{line}</div>
-            ))}
-          </div>
-        ) : (
-          <button onClick={runBatchRegistration} className="w-full bg-[#ff6600] text-white py-4 rounded-2xl font-black shadow-lg active:scale-95 transition-all text-sm">
-            全員のログインを許可する (1234)
-          </button>
-        )}
-        <p className="text-[9px] text-white/40 mt-3 italic">※Rate Limitエラーが出る場合は、Supabase設定の制限緩和が必要です。</p>
+      {/* 操作パネル */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <label className="bg-white p-4 rounded-2xl border-2 border-dashed border-gray-200 text-center cursor-pointer active:bg-gray-50">
+          <span className="text-[10px] font-black text-gray-400 block mb-1 uppercase">Step 1</span>
+          <span className="text-xs font-bold text-[#001f3f]">CSV読込</span>
+          <input type="file" accept=".csv" className="hidden" onChange={handleCsvUpload} />
+        </label>
+        <button onClick={runBatchRegistration} disabled={processing} className="bg-[#ff6600] text-white p-4 rounded-2xl font-black shadow-lg disabled:opacity-50 text-xs">
+          <span className="text-[10px] opacity-60 block mb-1 uppercase">Step 2</span>
+          ログイン許可
+        </button>
       </div>
+
+      {processing && (
+        <div className="mb-6 bg-[#001f3f] p-4 rounded-2xl font-mono text-[10px] h-32 overflow-y-auto">
+          {log.map((l, i) => <div key={i} className={l.includes('✅') ? 'text-green-400' : l.includes('❌') ? 'text-red-400' : 'text-gray-400'}>{l}</div>)}
+        </div>
+      )}
 
       <div className="space-y-2">
         {students.map(s => (
-          <div key={s.id} className="bg-white p-4 rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm active:bg-gray-50">
-            <div className="text-left">
+          <div key={s.id} className="bg-white p-4 rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm">
+            <div className="text-left leading-tight">
               <p className="font-black text-[#001f3f]">{s.name}</p>
-              <p className="text-[10px] font-bold text-gray-300">{s.login_email}</p>
+              <p className="text-[9px] font-bold text-gray-300 uppercase tracking-tighter">{s.kyu} | {s.login_email}</p>
             </div>
-            <button onClick={() => onSelect(s)} className="text-[#ff6600] font-black text-xs border border-[#ff6600]/20 px-3 py-1.5 rounded-full">評価入力</button>
+            <button onClick={() => onSelect(s)} className="bg-gray-50 text-[#001f3f] font-black text-[10px] px-4 py-2 rounded-xl">評価入力</button>
           </div>
         ))}
       </div>
