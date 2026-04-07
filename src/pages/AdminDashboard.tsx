@@ -7,6 +7,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   const [searchQuery, setSearchQuery] = useState('')
   const [branchFilter, setBranchFilter] = useState('すべて')
   const [loading, setLoading] = useState(true)
+  const [isUploading, setIsUploading] = useState(false) // CSVアップロード状態
 
   const isMaster = adminProfile?.login_email === 'mr.pepper0402@gmail.com'
 
@@ -17,7 +18,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
       if (error) throw error
       setStudents(data || [])
     } catch (err) {
-      console.error('Fetch Error:', err)
+      console.error('データ取得失敗:', err)
     } finally {
       setLoading(false)
     }
@@ -25,20 +26,28 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   useEffect(() => { loadStudents() }, [loadStudents])
 
-  // --- CSV読み込み (エラー対策強化版) ---
+  // --- CSV読み込み (デバッグ・進捗表示強化版) ---
   const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    setIsUploading(true) // ローディング開始
+    console.log("CSV読み込み開始:", file.name)
+
     const reader = new FileReader()
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string
         const lines = text.split('\n').filter(line => line.trim() !== '')
-        const dataLines = lines.slice(1) // ヘッダー飛ばし
+        const dataLines = lines.slice(1) 
         
-        const updates = dataLines.map(line => {
+        const updates = dataLines.map((line, index) => {
           const v = line.split(',').map(s => s.trim())
-          if (v.length < 9 || !v[8]) return null // メールアドレスがない行は無視
+          // 8列目(index 8)のメールアドレスが必須
+          if (!v[8]) {
+            console.warn(`行 ${index + 2}: メールアドレスがないためスキップしました`, v)
+            return null
+          }
           
           return { 
             name: (v[1] || '') + (v[2] || ''), 
@@ -49,18 +58,30 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           }
         }).filter(Boolean) as any[]
         
+        console.log("送信データ準備完了:", updates.length, "件")
+
         if (updates.length === 0) {
-          alert('有効なデータが見つかりませんでした。CSVの列を確認してください。');
-          return;
+          alert('有効なデータがCSVに見つかりませんでした。')
+          setIsUploading(false)
+          return
         }
 
+        // Supabaseへの送信
         const { error } = await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
-        if (error) throw error
-        alert(`${updates.length}件の名簿を更新しました`);
-        loadStudents();
-      } catch (err) {
-        console.error('CSV Import Error:', err);
-        alert('CSVの読み込みに失敗しました。形式を確認してください。');
+        
+        if (error) {
+          console.error("Supabase保存エラー:", error)
+          throw error
+        }
+
+        console.log("Supabase保存成功")
+        alert(`${updates.length}件の名簿を更新しました`)
+        await loadStudents()
+      } catch (err: any) {
+        alert('エラーが発生しました: ' + (err.message || '不明なエラー'))
+      } finally {
+        setIsUploading(false) // ローディング終了
+        if (e.target) e.target.value = '' // 同じファイルを再度選べるようにリセット
       }
     }
     reader.readAsText(file)
@@ -84,6 +105,14 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   return (
     <div className="flex h-screen bg-[#f0f2f5] overflow-hidden font-sans text-[#001f3f]">
+      {/* CSV読み込み中のオーバーレイ表示 */}
+      {isUploading && (
+        <div className="fixed inset-0 bg-[#001f3f]/80 z-[100] flex flex-col items-center justify-center text-white">
+          <div className="animate-spin text-4xl mb-4">🥋</div>
+          <p className="font-black tracking-widest animate-pulse">名簿データを更新中...</p>
+        </div>
+      )}
+
       {/* 左：サイドバー */}
       <div className="w-full md:w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl z-10">
         <div className="p-6 bg-[#001f3f] text-white">
@@ -93,10 +122,9 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
               <span className="text-lg font-black italic">ADMIN</span>
             </div>
             
-            {/* ログアウト・CSVボタン */}
             <div className="flex gap-2">
-              <label className="text-[10px] bg-white/10 hover:bg-white/20 p-2 rounded-lg cursor-pointer border border-white/10">
-                CSV <input type="file" className="hidden" onChange={handleCsvUpload} />
+              <label className="text-[10px] bg-white/10 hover:bg-white/20 p-2 rounded-lg cursor-pointer border border-white/10 transition-all">
+                CSV <input type="file" className="hidden" onChange={handleCsvUpload} disabled={isUploading} />
               </label>
               <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-500/20 hover:bg-red-500 p-2 rounded-lg border border-red-500/20 transition-all">
                 Logout
@@ -106,7 +134,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
           <div className="space-y-3">
             <input 
-              type="text" placeholder="検索..." 
+              type="text" placeholder="名前・級で検索..." 
               className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs outline-none focus:bg-white focus:text-[#001f3f]"
               value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -114,22 +142,28 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
               className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-[10px] font-black outline-none focus:bg-white focus:text-[#001f3f]"
               value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}
             >
-              {dynamicBranches.map(b => <option key={b} value={b} className="text-black">{b === 'すべて' ? 'すべての支部' : `${b}支部`}</option>)}
+              {dynamicBranches.map(b => (
+                <option key={b} value={b} className="text-black">{b === 'すべて' ? 'すべての支部' : `${b}支部`}</option>
+              ))}
             </select>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-white">
-          {filteredStudents.map(s => (
-            <button key={s.id} onClick={() => setSelectedStudent(s)}
-              className={`w-full p-5 text-left border-l-4 transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
-              <p className="font-black text-sm">{s.name}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{(s as any).branch || '未設定'}</span>
-                <span className="text-[9px] font-bold text-orange-500 uppercase">{s.kyu || '無級'}</span>
-              </div>
-            </button>
-          ))}
+        <div className="flex-1 overflow-y-auto bg-white divide-y divide-gray-50">
+          {filteredStudents.length > 0 ? (
+            filteredStudents.map(s => (
+              <button key={s.id} onClick={() => setSelectedStudent(s)}
+                className={`w-full p-5 text-left border-l-4 transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
+                <p className="font-black text-sm">{s.name}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{(s as any).branch || '未設定'}</span>
+                  <span className="text-[9px] font-bold text-orange-500 uppercase">{s.kyu || '無級'}</span>
+                </div>
+              </button>
+            ))
+          ) : (
+            <div className="p-10 text-center text-gray-300 font-bold text-xs uppercase tracking-widest">No Students Found</div>
+          )}
         </div>
       </div>
 
@@ -145,7 +179,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           />
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-gray-200">
-            <p className="font-black text-[10px] tracking-[0.5em]">SELECT STUDENT</p>
+            <p className="font-black text-[10px] tracking-[0.5em] opacity-30">SELECT A STUDENT TO EVALUATE</p>
           </div>
         )}
       </div>
@@ -153,7 +187,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   )
 }
 
-/* --- サブコンポーネント --- */
+/* --- サブコンポーネント & ヘルパー --- */
 
 function EvaluationPanel({ student, isMaster, onRefresh, onKyuUpdate }: any) {
   const [criteria, setCriteria] = useState<any[]>([])
@@ -181,7 +215,7 @@ function EvaluationPanel({ student, isMaster, onRefresh, onKyuUpdate }: any) {
   const totalScore = criteria.reduce((acc, curr) => acc + (curr.grade === 'A' ? 2.5 : curr.grade === 'B' ? 1.5 : curr.grade === 'C' ? 0.5 : 0), 0)
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-2">
       <div className="bg-[#001f3f] rounded-[40px] p-8 text-white mb-6 flex justify-between items-center shadow-xl">
         <div>
           <h2 className="text-3xl font-black mb-1">{student?.name}</h2>
@@ -194,14 +228,14 @@ function EvaluationPanel({ student, isMaster, onRefresh, onKyuUpdate }: any) {
 
       <div className="space-y-4">
         {criteria.map(c => (
-          <div key={c.id} className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 flex flex-col">
+          <div key={c.id} className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100">
             <div className="flex justify-between items-start mb-4">
               <p className="text-sm font-bold text-[#001f3f]">{c.examination_content}</p>
-              {c.grade && <button onClick={() => saveGrade(c.id, null)} className="text-[10px] text-gray-300 font-bold">✕ CLEAR</button>}
+              {c.grade && <button onClick={() => saveGrade(c.id, null)} className="text-[10px] text-gray-300 font-bold hover:text-red-400">✕ CLEAR</button>}
             </div>
             <div className="grid grid-cols-4 gap-2">
               {['A', 'B', 'C', 'D'].map(g => (
-                <button key={g} onClick={() => saveGrade(c.id, g)} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white' : 'bg-gray-50 text-gray-200'}`}>{g}</button>
+                <button key={g} onClick={() => saveGrade(c.id, g)} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-200'}`}>{g}</button>
               ))}
             </div>
           </div>
@@ -218,6 +252,4 @@ function getTargetBelt(kyu: string) {
   if (k.match(/8|7/)) return '青帯';
   if (k.match(/6|5/)) return '橙帯';
   if (k.match(/4|3/)) return '緑帯';
-  if (k.includes('1') || k.includes('2')) return '茶帯';
-  return '黒帯';
-}
+  if (k.includes('1') || k
