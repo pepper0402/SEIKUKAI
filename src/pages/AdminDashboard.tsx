@@ -7,7 +7,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   const [searchQuery, setSearchQuery] = useState('')
   const [branchFilter, setBranchFilter] = useState('すべて')
   const [loading, setLoading] = useState(true)
-  const [isUploading, setIsUploading] = useState(false) // CSVアップロード状態
+  const [isUploading, setIsUploading] = useState(false)
 
   const isMaster = adminProfile?.login_email === 'mr.pepper0402@gmail.com'
 
@@ -18,7 +18,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
       if (error) throw error
       setStudents(data || [])
     } catch (err) {
-      console.error('データ取得失敗:', err)
+      console.error('Data Fetch Error:', err)
     } finally {
       setLoading(false)
     }
@@ -26,29 +26,18 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   useEffect(() => { loadStudents() }, [loadStudents])
 
-  // --- CSV読み込み (デバッグ・進捗表示強化版) ---
   const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
-    setIsUploading(true) // ローディング開始
-    console.log("CSV読み込み開始:", file.name)
-
+    setIsUploading(true)
     const reader = new FileReader()
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string
         const lines = text.split('\n').filter(line => line.trim() !== '')
-        const dataLines = lines.slice(1) 
-        
-        const updates = dataLines.map((line, index) => {
+        const updates = lines.slice(1).map(line => {
           const v = line.split(',').map(s => s.trim())
-          // 8列目(index 8)のメールアドレスが必須
-          if (!v[8]) {
-            console.warn(`行 ${index + 2}: メールアドレスがないためスキップしました`, v)
-            return null
-          }
-          
+          if (!v[8]) return null
           return { 
             name: (v[1] || '') + (v[2] || ''), 
             login_email: v[8], 
@@ -58,30 +47,16 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           }
         }).filter(Boolean) as any[]
         
-        console.log("送信データ準備完了:", updates.length, "件")
-
-        if (updates.length === 0) {
-          alert('有効なデータがCSVに見つかりませんでした。')
-          setIsUploading(false)
-          return
+        if (updates.length > 0) {
+          const { error } = await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
+          if (error) throw error
+          alert(`${updates.length}件更新しました`)
+          loadStudents()
         }
-
-        // Supabaseへの送信
-        const { error } = await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
-        
-        if (error) {
-          console.error("Supabase保存エラー:", error)
-          throw error
-        }
-
-        console.log("Supabase保存成功")
-        alert(`${updates.length}件の名簿を更新しました`)
-        await loadStudents()
-      } catch (err: any) {
-        alert('エラーが発生しました: ' + (err.message || '不明なエラー'))
+      } catch (err) {
+        alert('CSVエラーが発生しました')
       } finally {
-        setIsUploading(false) // ローディング終了
-        if (e.target) e.target.value = '' // 同じファイルを再度選べるようにリセット
+        setIsUploading(false)
       }
     }
     reader.readAsText(file)
@@ -95,9 +70,8 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
       const kyu = s.kyu || '無級'
-      const belt = getTargetBelt(kyu)
       const branch = (s as any).branch || '未設定'
-      const matchSearch = `${s.name || ''} ${kyu} ${belt}`.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchSearch = `${s.name || ''} ${kyu}`.toLowerCase().includes(searchQuery.toLowerCase())
       const matchBranch = branchFilter === 'すべて' || branch === branchFilter
       return matchSearch && matchBranch
     })
@@ -105,33 +79,37 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   return (
     <div className="flex h-screen bg-[#f0f2f5] overflow-hidden font-sans text-[#001f3f]">
-      {/* CSV読み込み中のオーバーレイ表示 */}
+      {/* CSV読込中のオーバーレイ */}
       {isUploading && (
-        <div className="fixed inset-0 bg-[#001f3f]/80 z-[100] flex flex-col items-center justify-center text-white">
-          <div className="animate-spin text-4xl mb-4">🥋</div>
-          <p className="font-black tracking-widest animate-pulse">名簿データを更新中...</p>
+        <div className="fixed inset-0 bg-[#001f3f]/90 z-[100] flex items-center justify-center text-white font-black">
+          UPDATING...
         </div>
       )}
 
-      {/* 左：サイドバー */}
+      {/* 左サイドバー */}
       <div className="w-full md:w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl z-10">
         <div className="p-6 bg-[#001f3f] text-white">
-          <div className="flex justify-between items-center mb-5">
+          {/* ヘッダーエリア: ここにログアウトを配置 */}
+          <div className="flex justify-between items-start mb-6">
             <div>
-              <h1 className="text-[10px] font-black tracking-[0.3em] text-orange-400 mb-1">SEIKUKAI</h1>
-              <span className="text-lg font-black italic">ADMIN</span>
+              <h1 className="text-[10px] font-black tracking-[0.3em] text-orange-400 leading-none mb-1">SEIKUKAI</h1>
+              <span className="text-lg font-black italic tracking-tighter leading-none">ADMIN</span>
             </div>
             
-            <div className="flex gap-2">
-              <label className="text-[10px] bg-white/10 hover:bg-white/20 p-2 rounded-lg cursor-pointer border border-white/10 transition-all">
-                CSV <input type="file" className="hidden" onChange={handleCsvUpload} disabled={isUploading} />
-              </label>
-              <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-500/20 hover:bg-red-500 p-2 rounded-lg border border-red-500/20 transition-all">
+            <div className="flex flex-col gap-2">
+              <button 
+                onClick={() => supabase.auth.signOut()} 
+                className="text-[9px] bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg font-black uppercase tracking-widest transition-all shadow-lg"
+              >
                 Logout
               </button>
+              <label className="text-[9px] bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg cursor-pointer font-black border border-white/10 text-center transition-all">
+                CSV <input type="file" className="hidden" onChange={handleCsvUpload} />
+              </label>
             </div>
           </div>
 
+          {/* 検索・フィルタ */}
           <div className="space-y-3">
             <input 
               type="text" placeholder="名前・級で検索..." 
@@ -149,25 +127,22 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           </div>
         </div>
 
+        {/* 生徒リスト */}
         <div className="flex-1 overflow-y-auto bg-white divide-y divide-gray-50">
-          {filteredStudents.length > 0 ? (
-            filteredStudents.map(s => (
-              <button key={s.id} onClick={() => setSelectedStudent(s)}
-                className={`w-full p-5 text-left border-l-4 transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
-                <p className="font-black text-sm">{s.name}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{(s as any).branch || '未設定'}</span>
-                  <span className="text-[9px] font-bold text-orange-500 uppercase">{s.kyu || '無級'}</span>
-                </div>
-              </button>
-            ))
-          ) : (
-            <div className="p-10 text-center text-gray-300 font-bold text-xs uppercase tracking-widest">No Students Found</div>
-          )}
+          {filteredStudents.map(s => (
+            <button key={s.id} onClick={() => setSelectedStudent(s)}
+              className={`w-full p-5 text-left border-l-4 transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
+              <p className="font-black text-sm">{s.name}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{(s as any).branch || '未設定'}</span>
+                <span className="text-[9px] font-bold text-orange-500 uppercase">{s.kyu || '無級'}</span>
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* 右：メインパネル */}
+      {/* 右メインエリア */}
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-6 md:p-10">
         {selectedStudent ? (
           <EvaluationPanel 
@@ -175,11 +150,10 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
             student={selectedStudent} 
             isMaster={isMaster} 
             onRefresh={loadStudents}
-            onKyuUpdate={(newKyu) => setSelectedStudent({...selectedStudent, kyu: newKyu})}
           />
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-gray-200">
-            <p className="font-black text-[10px] tracking-[0.5em] opacity-30">SELECT A STUDENT TO EVALUATE</p>
+            <p className="font-black text-[10px] tracking-[0.5em]">SELECT STUDENT</p>
           </div>
         )}
       </div>
@@ -187,9 +161,8 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   )
 }
 
-/* --- サブコンポーネント & ヘルパー --- */
-
-function EvaluationPanel({ student, isMaster, onRefresh, onKyuUpdate }: any) {
+/* --- 評価パネル --- */
+function EvaluationPanel({ student, isMaster, onRefresh }: any) {
   const [criteria, setCriteria] = useState<any[]>([])
   const targetBelt = getTargetBelt(student?.kyu || '無級')
 
@@ -215,7 +188,7 @@ function EvaluationPanel({ student, isMaster, onRefresh, onKyuUpdate }: any) {
   const totalScore = criteria.reduce((acc, curr) => acc + (curr.grade === 'A' ? 2.5 : curr.grade === 'B' ? 1.5 : curr.grade === 'C' ? 0.5 : 0), 0)
 
   return (
-    <div className="max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-2">
+    <div className="max-w-2xl mx-auto">
       <div className="bg-[#001f3f] rounded-[40px] p-8 text-white mb-6 flex justify-between items-center shadow-xl">
         <div>
           <h2 className="text-3xl font-black mb-1">{student?.name}</h2>
@@ -228,14 +201,14 @@ function EvaluationPanel({ student, isMaster, onRefresh, onKyuUpdate }: any) {
 
       <div className="space-y-4">
         {criteria.map(c => (
-          <div key={c.id} className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100">
+          <div key={c.id} className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 flex flex-col">
             <div className="flex justify-between items-start mb-4">
               <p className="text-sm font-bold text-[#001f3f]">{c.examination_content}</p>
-              {c.grade && <button onClick={() => saveGrade(c.id, null)} className="text-[10px] text-gray-300 font-bold hover:text-red-400">✕ CLEAR</button>}
+              {c.grade && <button onClick={() => saveGrade(c.id, null)} className="text-[10px] text-gray-300 font-bold">✕ CLEAR</button>}
             </div>
             <div className="grid grid-cols-4 gap-2">
               {['A', 'B', 'C', 'D'].map(g => (
-                <button key={g} onClick={() => saveGrade(c.id, g)} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-200'}`}>{g}</button>
+                <button key={g} onClick={() => saveGrade(c.id, g)} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white' : 'bg-gray-50 text-gray-200'}`}>{g}</button>
               ))}
             </div>
           </div>
@@ -252,4 +225,6 @@ function getTargetBelt(kyu: string) {
   if (k.match(/8|7/)) return '青帯';
   if (k.match(/6|5/)) return '橙帯';
   if (k.match(/4|3/)) return '緑帯';
-  if (k.includes('1') || k
+  if (k.includes('1') || k.includes('2')) return '茶帯';
+  return '黒帯';
+}
