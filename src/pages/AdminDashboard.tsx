@@ -39,6 +39,20 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     }
   }
 
+  // --- 名簿削除処理 ---
+  const handleDeleteStudent = async (student: Profile) => {
+    if (!window.confirm(`【退会処理】\n${student.name} さんのデータを完全に削除しますか？\nこの操作は取り消せません。`)) return
+
+    const { error } = await supabase.from('profiles').delete().eq('id', student.id)
+    if (error) {
+      alert('削除に失敗しました: ' + error.message)
+    } else {
+      alert('削除が完了しました')
+      if (selectedStudent?.id === student.id) setSelectedStudent(null)
+      loadStudents()
+    }
+  }
+
   // --- 名簿CSVアップロード ---
   const handleProfileCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -109,7 +123,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     reader.readAsText(file)
   }
 
-  // 既存の全支部リスト（選択用）
   const allBranchList = useMemo(() => {
     const branches = students.map(s => (s as any).branch).filter(Boolean)
     return Array.from(new Set(['池田', '川西', '宝塚', ...branches]))
@@ -150,11 +163,21 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
           {filteredStudents.map(s => (
             <div key={s.id} className={`group w-full p-5 border-l-4 transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
-              <div className="flex justify-between items-start cursor-pointer" onClick={() => setSelectedStudent(s)}>
-                <div>
+              <div className="flex justify-between items-start">
+                <div className="flex-1 cursor-pointer" onClick={() => setSelectedStudent(s)}>
                   <p className="font-black text-sm">{s.name}</p>
                   <p className="text-[9px] font-bold text-orange-500 uppercase mt-1">{s.kyu}</p>
                 </div>
+                {/* 削除ボタン */}
+                <button 
+                  onClick={() => handleDeleteStudent(s)}
+                  className="text-gray-300 hover:text-red-500 transition-colors p-1"
+                  title="退会/削除"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
               </div>
               {/* 支部変更ドロップダウン */}
               <div className="mt-3">
@@ -185,17 +208,15 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 function EvaluationPanel({ student, isMaster, onRefresh }: any) {
   const allKyuList = ['無級', '準10級', '10級', '準9級', '9級', '準8級', '8級', '準7級', '7級', '準6級', '6級', '準5級', '5級', '準4級', '4級', '準3級', '3級', '準2級', '2級', '準1級', '1級', '初段', '弍段', '参段', '四段', '五段']
   
-  // 年齢計算と所属判定
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
   const isGeneral = age >= 15;
 
-  // タブに表示する帯のリストを属性によってフィルタリング
   const belts = useMemo(() => {
     const baseBelts = ['白帯', '黄帯', '青帯', '橙帯', '紫帯', '緑帯', '茶帯', '黒帯'];
     if (isGeneral) {
-      return baseBelts.filter(b => b !== '橙帯'); // 一般部には橙帯を表示しない
+      return baseBelts.filter(b => b !== '橙帯');
     } else {
-      return baseBelts.filter(b => b !== '紫帯'); // 少年部には紫帯を表示しない
+      return baseBelts.filter(b => b !== '紫帯');
     }
   }, [isGeneral]);
 
@@ -288,7 +309,6 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
         </div>
       )}
 
-      {/* フィルタリングされた帯タブを表示 */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
         {belts.map(b => {
           const actualTabKey = (b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b;
