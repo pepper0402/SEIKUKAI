@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase, Profile } from '../lib/supabase'
 
+// --- ユーティリティ: 年齢計算 ---
 const calculateAge = (birthday: string) => {
   if (!birthday) return 0;
   const birthDate = new Date(birthday.replace(/\//g, '-'));
@@ -17,8 +18,10 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   const [selectedStudent, setSelectedStudent] = useState<Profile | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [branchFilter, setBranchFilter] = useState('すべて')
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true) // サイドバー開閉状態
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+  const [isUploading, setIsUploading] = useState(false)
 
+  // 個別追加用
   const [showAddForm, setShowAddForm] = useState(false)
   const [newStudent, setNewStudent] = useState({ name: '', login_email: '', branch: '池田', birthday: '', kyu: '無級' })
 
@@ -29,55 +32,94 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     setStudents(data || [])
   }, [])
 
-  useEffect(() => { loadStudents() }, [loadStudents])
+  useEffect(() => { 
+    loadStudents() 
+    // 初期表示でスマホの場合はサイドバーを閉じておく
+    if (window.innerWidth < 768) setIsSidebarOpen(false)
+  }, [loadStudents])
 
-  // 道場生選択時の挙動
   const handleSelectStudent = (student: Profile) => {
     setSelectedStudent(student)
-    // スマホサイズ（md未満）の場合は自動でサイドバーを閉じる
-    if (window.innerWidth < 768) {
-      setIsSidebarOpen(false)
-    }
+    if (window.innerWidth < 768) setIsSidebarOpen(false)
   }
 
+  // --- 個別追加実行 ---
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!newStudent.name || !newStudent.login_email) return alert('名前とメールは必須です')
     const { error } = await supabase.from('profiles').upsert([{
       ...newStudent,
       login_email: newStudent.login_email.toLowerCase(),
       is_admin: false
     }], { onConflict: 'login_email' })
-    if (!error) {
-      alert('追加しました');
+    if (error) {
+      alert('エラー: ' + error.message)
+    } else {
+      alert('追加完了');
       setNewStudent({ name: '', login_email: '', branch: '池田', birthday: '', kyu: '無級' });
       setShowAddForm(false);
       loadStudents();
     }
   }
 
+  // --- 支部更新 ---
   const handleBranchUpdate = async (studentId: string, newBranch: string) => {
     const { error } = await supabase.from('profiles').update({ branch: newBranch }).eq('id', studentId)
     if (!error) setStudents(prev => prev.map(s => s.id === studentId ? { ...s, branch: newBranch } : s))
   }
 
+  // --- 名簿削除 ---
   const handleDeleteStudent = async (student: Profile) => {
-    if (!window.confirm(`${student.name} を削除しますか？`)) return
+    if (!window.confirm(`【退会処理】\n${student.name} さんのデータを完全に削除しますか？`)) return
     const { error } = await supabase.from('profiles').delete().eq('id', student.id)
-    if (!error) loadStudents()
+    if (!error) {
+      if (selectedStudent?.id === student.id) setSelectedStudent(null)
+      loadStudents()
+    }
   }
 
+  // --- 名簿CSVアップロード ---
   const handleProfileCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
+    setIsUploading(true)
     const reader = new FileReader()
     reader.onload = async (event) => {
-      const text = event.target?.result as string
-      const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
-      const updates = lines.slice(1).map(line => {
-        const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
-        return { name: (v[1] || '') + (v[2] || ''), login_email: v[8].toLowerCase(), kyu: v[7] || '無級', branch: v[0] || '未設定', birthday: v[6] || '', is_admin: false }
-      }).filter(u => u.login_email)
-      await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
-      loadStudents()
+      try {
+        const text = event.target?.result as string
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
+        const updates = lines.slice(1).map(line => {
+          const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
+          if (!v[8]) return null
+          return { name: (v[1] || '') + (v[2] || ''), login_email: v[8].toLowerCase(), kyu: v[7] || '無級', branch: v[0] || '未設定', birthday: v[6] || '', is_admin: false }
+        }).filter(Boolean) as any[]
+        const { error } = await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
+        if (!error) { alert('名簿を更新しました'); loadStudents(); }
+      } catch (err: any) { alert(err.message) } finally { setIsUploading(false); e.target.value = '' }
+    }
+    reader.readAsText(file)
+  }
+
+  // --- 審査基準CSVアップロード ---
+  const handleCriteriaCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return
+    if (!window.confirm('審査項目を一括登録しますか？')) return
+    setIsUploading(true)
+    const reader = new FileReader()
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
+        const updates = lines.slice(1).map(line => {
+          const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
+          if (!v[0] || !v[2]) return null 
+          return { dan: v[0], examination_type: v[1] || '基本', examination_content: v[2], video_url: v[3] || '' }
+        }).filter(Boolean) as any[]
+        if (updates.length > 0) {
+          const { error } = await supabase.from('criteria').insert(updates)
+          if (error) throw error
+          alert(`✅ 審査項目を ${updates.length} 件登録しました。`)
+        }
+      } catch (err: any) { alert('CSVエラー: ' + err.message) } finally { setIsUploading(false); e.target.value = '' }
     }
     reader.readAsText(file)
   }
@@ -97,33 +139,21 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   return (
     <div className="flex h-screen bg-[#f0f2f5] overflow-hidden font-sans text-[#001f3f] relative">
       
-      {/* モバイル用メニューボタン（サイドバーが閉じている時だけ右上に表示） */}
+      {/* モバイル用ハンバーガーボタン */}
       {!isSidebarOpen && (
-        <button 
-          onClick={() => setIsSidebarOpen(true)}
-          className="fixed top-4 left-4 z-50 bg-[#001f3f] text-white p-3 rounded-full shadow-2xl md:hidden"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
+        <button onClick={() => setIsSidebarOpen(true)} className="fixed top-4 left-4 z-50 bg-[#001f3f] text-white p-3 rounded-full shadow-2xl md:hidden">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
       )}
 
       {/* サイドバー */}
-      <div className={`
-        fixed inset-y-0 left-0 z-40 w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl transition-transform duration-300 ease-in-out
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        md:relative md:translate-x-0
-      `}>
+      <div className={`fixed inset-y-0 left-0 z-40 w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
         <div className="p-6 bg-[#001f3f] text-white">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-lg font-black italic tracking-tighter text-white uppercase">SEIKUKAI <span className="text-orange-400">ADMIN</span></h1>
+            <h1 className="text-lg font-black italic tracking-tighter uppercase">SEIKUKAI <span className="text-orange-400">ADMIN</span></h1>
             <div className="flex gap-2">
-              {/* モバイル時は閉じるボタンを表示 */}
-              <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/50 hover:text-white">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-              <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase text-white">Logout</button>
+              <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/50"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+              <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase">Logout</button>
             </div>
           </div>
           
@@ -131,14 +161,14 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
             <button onClick={() => setShowAddForm(!showAddForm)} className="w-full py-2 bg-green-600 rounded-xl text-[9px] font-black border border-green-500/20">＋ 個別追加</button>
             <div className="grid grid-cols-2 gap-2">
               <label className="block text-center py-2 bg-white/10 rounded-xl cursor-pointer text-[9px] font-black border border-white/10">👤 名簿CSV <input type="file" className="hidden" onChange={handleProfileCsvUpload} /></label>
-              <label className="block text-center py-2 bg-orange-500/20 rounded-xl cursor-pointer text-[9px] font-black border border-orange-500/20 text-orange-400">📜 審査CSV <input type="file" className="hidden" /></label>
+              <label className="block text-center py-2 bg-orange-500/20 rounded-xl cursor-pointer text-[9px] font-black border border-orange-500/20 text-orange-400">📜 審査CSV <input type="file" className="hidden" onChange={handleCriteriaCsvUpload} /></label>
             </div>
           </div>
 
           {showAddForm && (
             <form onSubmit={handleAddStudent} className="mb-4 p-3 bg-white/5 rounded-xl border border-white/10 space-y-2">
-              <input type="text" placeholder="氏名" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} />
-              <input type="email" placeholder="メール" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={newStudent.login_email} onChange={e => setNewStudent({...newStudent, login_email: e.target.value})} />
+              <input type="text" placeholder="氏名" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none" value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} />
+              <input type="email" placeholder="メール" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none" value={newStudent.login_email} onChange={e => setNewStudent({...newStudent, login_email: e.target.value})} />
               <div className="flex gap-2">
                 <input type="date" className="flex-1 bg-white/10 rounded-lg px-2 py-1.5 text-[10px] outline-none" value={newStudent.birthday} onChange={e => setNewStudent({...newStudent, birthday: e.target.value})} />
                 <select className="flex-1 bg-white/10 rounded-lg px-2 py-1.5 text-[10px] outline-none" value={newStudent.branch} onChange={e => setNewStudent({...newStudent, branch: e.target.value})}>
@@ -178,7 +208,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         </div>
       </div>
 
-      {/* メインコンテンツ */}
+      {/* メインパネル */}
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-10 pt-16 md:pt-10">
         {selectedStudent ? (
           <EvaluationPanel key={selectedStudent.id} student={selectedStudent} isMaster={isMaster} onRefresh={() => { loadStudents(); setSelectedStudent(null); }} />
@@ -187,13 +217,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         )}
       </div>
 
-      {/* スマホ用オーバーレイ（サイドバーが開いている時に背景を暗くする） */}
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-30 md:hidden" 
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+      {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setIsSidebarOpen(false)} />}
     </div>
   )
 }
