@@ -7,7 +7,7 @@ export default function AdminDashboard({ profile }: { profile: Profile; onReload
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-[#001f3f] px-6 py-4 flex justify-between items-center shadow-lg">
+      <div className="bg-[#001f3f] px-6 py-4 flex justify-between items-center">
         <h1 className="text-white font-black text-lg tracking-[0.2em]">誠空会 管理</h1>
         <button onClick={() => supabase.auth.signOut()} className="text-white/60 text-[10px] font-bold border border-white/20 rounded-full px-4 py-1.5">ログアウト</button>
       </div>
@@ -34,7 +34,7 @@ function StudentsTab({ onSelect }: { onSelect: (s: Profile) => void }) {
   const [students, setStudents] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
-  const [progress, setProgress] = useState({ current: 0, total: 0, msg: '' })
+  const [log, setLog] = useState<string[]>([]) // ログ表示用
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -45,41 +45,38 @@ function StudentsTab({ onSelect }: { onSelect: (s: Profile) => void }) {
 
   useEffect(() => { load() }, [load])
 
-  // ★一括登録スクリプト本体
   const runBatchRegistration = async () => {
     if (students.length === 0) return alert('名簿がありません')
-    const confirmMsg = `現在表示されている ${students.length} 名を「パスワード: 1234」で認証システムに登録します。よろしいですか？\n\n※既に登録済みの人はスキップされます。`
-    if (!confirm(confirmMsg)) return
+    if (!confirm(`${students.length} 名のアカウント作成を開始します。`)) return
 
     setProcessing(true)
-    let successCount = 0
-    let skipCount = 0
+    setLog(["開始します..."])
+    let success = 0
+    let errorCount = 0
 
     for (let i = 0; i < students.length; i++) {
       const s = students[i]
       const email = s.login_email.replace(/[\s\t\n\r　]/g, '').trim().toLowerCase()
       
-      setProgress({ current: i + 1, total: students.length, msg: `${s.name} を登録中...` })
-
-      // 1件ずつサインアップを実行
+      // 1件ずつサインアップ
       const { error } = await supabase.auth.signUp({
         email: email,
         password: '1234',
-        options: { data: { full_name: s.name } }
       })
 
       if (!error) {
-        successCount++
+        success++
+        setLog(prev => [`✅ ${s.name}: 成功`, ...prev.slice(0, 5)])
       } else {
-        skipCount++ // すでに存在する場合などはここ
+        errorCount++
+        setLog(prev => [`❌ ${s.name}: ${error.message}`, ...prev.slice(0, 5)])
       }
 
-      // サーバーへの負荷軽減のため、少しだけ待機（0.2秒）
-      await new Promise(resolve => setTimeout(resolve, 200))
+      await new Promise(r => setTimeout(r, 300)) // サーバー負荷軽減
     }
 
     setProcessing(false)
-    alert(`完了しました！\n新規登録: ${successCount}名\nスキップ: ${skipCount}名\n\nこれで全員が「1234」でログインできるはずです。`)
+    alert(`完了しました。\n成功: ${success}件\nエラー: ${errorCount}件\n\nエラーが出る場合はSupabaseの設定を確認してください。`)
     load()
   }
 
@@ -87,47 +84,37 @@ function StudentsTab({ onSelect }: { onSelect: (s: Profile) => void }) {
 
   return (
     <div className="p-3">
-      {/* 一括登録ツールパネル */}
-      <div className="mb-6 p-6 bg-[#001f3f] rounded-3xl shadow-2xl text-center relative overflow-hidden">
-        <div className="relative z-10">
-          <p className="text-[10px] font-black text-[#ff6600] mb-2 uppercase tracking-[0.3em]">System Activation</p>
-          <h3 className="text-white font-black text-lg mb-4 tracking-tighter">一括アカウント作成</h3>
-          
-          {processing ? (
-            <div className="py-4">
-              <div className="text-white text-2xl font-black mb-1">{Math.round((progress.current / progress.total) * 100)}%</div>
-              <div className="text-[#ff6600] text-[10px] font-bold animate-pulse">{progress.msg}</div>
-              <div className="w-full bg-white/10 h-1.5 mt-4 rounded-full overflow-hidden">
-                <div className="bg-[#ff6600] h-full transition-all duration-300" style={{ width: `${(progress.current / progress.total) * 100}%` }}></div>
-              </div>
-            </div>
-          ) : (
-            <button 
-              onClick={runBatchRegistration}
-              className="w-full bg-[#ff6600] text-white py-4 rounded-2xl font-black shadow-xl active:scale-95 transition-all text-sm"
-            >
-              全員のログインを許可する (1234)
-            </button>
-          )}
-        </div>
+      <div className="mb-6 p-6 bg-[#001f3f] rounded-3xl shadow-xl text-center">
+        <h3 className="text-white font-black text-lg mb-4">アカウント一括作成</h3>
+        
+        {processing ? (
+          <div className="bg-black/20 p-4 rounded-xl mb-4 text-left font-mono text-[10px]">
+            {log.map((line, idx) => (
+              <div key={idx} className={line.startsWith('✅') ? 'text-green-400' : 'text-red-400'}>{line}</div>
+            ))}
+          </div>
+        ) : (
+          <button onClick={runBatchRegistration} className="w-full bg-[#ff6600] text-white py-4 rounded-2xl font-black shadow-lg">
+            全員のログインを許可する (1234)
+          </button>
+        )}
       </div>
 
       <div className="space-y-2">
         {students.map(s => (
-          <button key={s.id} onClick={() => onSelect(s)} className="w-full bg-white p-4 rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm">
+          <div key={s.id} className="bg-white p-4 rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm">
             <div className="text-left">
               <p className="font-black text-[#001f3f]">{s.name}</p>
-              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">{s.kyu} | {s.login_email}</p>
+              <p className="text-[9px] font-bold text-gray-300">{s.login_email}</p>
             </div>
-            <span className="text-[#ff6600] font-black">＞</span>
-          </button>
+            <button onClick={() => onSelect(s)} className="text-[#ff6600] font-black text-sm">評価入力 ＞</button>
+          </div>
         ))}
       </div>
     </div>
   )
 }
 
-// 評価入力・審査基準は今のまま維持
-function EvalTab({ student, onBack }: any) { return <div className="p-20 text-center font-bold">評価画面（構築中）</div> }
+function EvalTab({ student, onBack }: any) { return <div className="p-20 text-center font-bold">評価画面</div> }
 function CriteriaTab() { return <div className="p-20 text-center font-bold">審査基準</div> }
 function Loader() { return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-[#ff6600] border-t-transparent rounded-full animate-spin" /></div> }
