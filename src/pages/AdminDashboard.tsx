@@ -144,7 +144,7 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
     const currentIndex = allKyuList.indexOf(student.kyu || '無級')
     const newIndex = allKyuList.indexOf(newKyu)
 
-    let confirmMsg = `${student.name} 君を 【${newKyu}】 に変更しますか？`
+    let confirmMsg = `${student.name} を 【${newKyu}】 に変更しますか？`
     
     // 下方修正（降段）の場合の特別警告
     if (newIndex < currentIndex) {
