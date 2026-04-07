@@ -8,42 +8,17 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   const [branchFilter, setBranchFilter] = useState('すべて')
   const [loading, setLoading] = useState(true)
 
-  // 管理者メールアドレスのチェック（null安全）
+  // 管理者権限の保護（adminProfileが空の場合を考慮）
   const isMaster = adminProfile?.login_email === 'mr.pepper0402@gmail.com'
 
   const loadStudents = useCallback(async () => {
-    try {
-      setLoading(true)
-      const { data, error } = await supabase.from('profiles').select('*').eq('is_admin', false).order('name')
-      if (error) throw error
-      setStudents(data || [])
-    } catch (err) {
-      console.error('データ読み込みエラー:', err)
-    } finally {
-      setLoading(false)
-    }
+    setLoading(true)
+    const { data } = await supabase.from('profiles').select('*').eq('is_admin', false).order('name')
+    setStudents(data || [])
+    setLoading(false)
   }, [])
 
   useEffect(() => { loadStudents() }, [loadStudents])
-
-  // 支部リストを動的に生成（データが空の場合のガードレール付き）
-  const dynamicBranches = useMemo(() => {
-    if (!students || students.length === 0) return ['すべて']
-    const branches = students.map(s => (s as any).branch).filter(Boolean)
-    return ['すべて', ...Array.from(new Set(branches))]
-  }, [students])
-
-  // 検索・フィルタリング（null安全）
-  const filteredStudents = useMemo(() => {
-    return students.filter(s => {
-      const kyu = s.kyu || '無級'
-      const belt = getTargetBelt(kyu)
-      const branch = (s as any).branch || '未設定'
-      const matchSearch = `${s.name} ${kyu} ${belt}`.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchBranch = branchFilter === 'すべて' || branch === branchFilter
-      return matchSearch && matchBranch
-    })
-  }, [students, searchQuery, branchFilter])
 
   // CSV読み込み
   const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -58,8 +33,8 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
       const updates = dataLines.map(line => {
         const v = line.split(',').map(s => s.trim())
         if (v.length < 9) return null
-        const email = v[8]
-        const isAdmin = email === 'mr.pepper0402@gmail.com'
+        const email = v[8];
+        const isAdmin = email === 'mr.pepper0402@gmail.com';
         return { 
           name: v[1] + v[2], 
           login_email: email, 
@@ -70,25 +45,39 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
       }).filter(Boolean) as any[]
       
       const { error } = await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
-      if (!error) { 
-        alert('名簿情報を更新しました'); 
-        loadStudents(); 
-      }
+      if (!error) { alert('名簿と支部情報を更新しました'); loadStudents(); }
     }
     reader.readAsText(file)
   }
 
-  if (loading && students.length === 0) {
-    return <div className="h-screen flex items-center justify-center bg-[#f0f2f5] font-black text-[#001f3f]">LOADING...</div>
-  }
+  // 現在登録されている支部リストを動的に生成
+  const dynamicBranches = useMemo(() => {
+    if (!students.length) return ['すべて']
+    const branches = students.map(s => (s as any).branch).filter(Boolean);
+    return ['すべて', ...Array.from(new Set(branches))];
+  }, [students])
+
+  // 検索と支部フィルターの連動
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+      // getTargetBeltを安全に呼び出す
+      const belt = getTargetBelt(s.kyu || '無級');
+      const studentBranch = (s as any).branch || '未設定';
+      const matchSearch = `${s.name} ${s.kyu} ${belt}`.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchBranch = branchFilter === 'すべて' || studentBranch === branchFilter
+      return matchSearch && matchBranch
+    })
+  }, [students, searchQuery, branchFilter])
 
   return (
-    <div className="flex h-screen bg-[#f0f2f5] overflow-hidden text-[#001f3f]">
-      {/* 左側：検索パネル */}
+    <div className="flex h-screen bg-[#f0f2f5] overflow-hidden font-sans text-[#001f3f]">
       <div className="w-full md:w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl z-10">
         <div className="p-6 bg-[#001f3f] text-white">
           <div className="flex justify-between items-center mb-5">
-            <h1 className="text-xs font-black tracking-widest text-orange-400">SEIKUKAI ADMIN</h1>
+            <div className="flex flex-col">
+              <h1 className="text-[10px] font-black tracking-[0.3em] text-orange-400 leading-none mb-1">SEIKUKAI</h1>
+              <span className="text-lg font-black italic tracking-tighter">ADMIN</span>
+            </div>
             <label className="text-[10px] bg-white/10 hover:bg-white/20 px-3 py-2 rounded-xl cursor-pointer font-black border border-white/10 transition-all">
               CSV読込 <input type="file" className="hidden" onChange={handleCsvUpload} />
             </label>
@@ -109,22 +98,20 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
             </select>
           </div>
         </div>
-
-        <div className="flex-1 overflow-y-auto divide-y divide-gray-50 no-scrollbar bg-white">
+        <div className="flex-1 overflow-y-auto divide-y divide-gray-50 bg-white">
           {filteredStudents.map(s => (
             <button key={s.id} onClick={() => setSelectedStudent(s)}
-              className={`w-full p-5 text-left transition-all border-l-4 ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
+              className={`w-full p-5 text-left border-l-4 ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
               <p className="font-black text-sm">{s.name}</p>
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{(s as any).branch || '未設定'}</span>
-                <span className="text-[9px] font-bold text-orange-500 uppercase">{s.kyu || '無級'}</span>
+                <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{(s as any).branch}</span>
+                <span className="text-[9px] font-bold text-orange-500 uppercase">{s.kyu}</span>
               </div>
             </button>
           ))}
         </div>
       </div>
 
-      {/* 右側：評価・操作エリア */}
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-6 md:p-10">
         {selectedStudent ? (
           <EvaluationPanel 
@@ -136,7 +123,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           />
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-gray-200">
-            <p className="font-black text-[10px] uppercase tracking-[0.5em]">Please Select a Student</p>
+            <p className="font-black text-[10px] uppercase tracking-[0.6em]">Please Select a Student</p>
           </div>
         )}
       </div>
@@ -144,8 +131,9 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   )
 }
 
-/* 評価パネル */
-function EvaluationPanel({ student, isMaster, onRefresh, onKyuUpdate }: { student: Profile, isMaster: boolean, onRefresh: () => void, onKyuUpdate: (k: string) => void }) {
+/* --- ここから下の関数が不足していたのが真っ白の原因です --- */
+
+function EvaluationPanel({ student, isMaster, onRefresh, onKyuUpdate }: any) {
   const [criteria, setCriteria] = useState<any[]>([])
   const targetBelt = getTargetBelt(student.kyu || '無級')
 
@@ -159,16 +147,4 @@ function EvaluationPanel({ student, isMaster, onRefresh, onKyuUpdate }: { studen
   }, [student.id, student.kyu, targetBelt])
 
   const saveGrade = async (cid: number, grade: string | null) => {
-    setCriteria(prev => prev.map(c => c.id === cid ? { ...c, grade } : c))
-    if (grade === null) {
-      await supabase.from('evaluations').delete().match({ student_id: student.id, criterion_id: cid })
-    } else {
-      await supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: cid, grade }, { onConflict: 'student_id,criterion_id' })
-    }
-  }
-
-  const handlePassAndUpgrade = async (nextKyu: string) => {
-    if (!window.confirm(`${nextKyu} への昇級を確定しますか？`)) return
-    const { error } = await supabase.from('profiles').update({ kyu: nextKyu }).eq('id', student.id)
-    if (!error) {
-      alert(`${student.name}君
+    setCriteria(prev => prev.map(c =>
