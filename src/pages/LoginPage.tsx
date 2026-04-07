@@ -74,3 +74,9 @@ export default function LoginPage({ admin }: { admin?: boolean }) {
     </div>
   )
 }
+// 一番外側の div をこれに書き換えてください
+<div className="min-h-screen w-screen bg-white flex items-center justify-center p-0 m-0 overflow-x-hidden">
+  
+  {/* そのすぐ内側の div（白いカード部分） */}
+  <div className="w-full max-w-[400px] space-y-8 bg-white p-10 rounded-xl shadow-2xl border-t-8 border-[#ff6600] mx-4">
+    {/* ...中身はそのまま... */}
