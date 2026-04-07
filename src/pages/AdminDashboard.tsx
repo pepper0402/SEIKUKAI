@@ -4,7 +4,6 @@ import { supabase, Profile } from '../lib/supabase'
 // --- ユーティリティ: 年齢計算 ---
 const calculateAge = (birthday: string) => {
   if (!birthday) return 0;
-  // CSVの「1972/1/5」形式をパース
   const birthDate = new Date(birthday.replace(/\//g, '-'));
   if (isNaN(birthDate.getTime())) return 0;
   const today = new Date();
@@ -30,7 +29,17 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   useEffect(() => { loadStudents() }, [loadStudents])
 
-  // --- 名簿CSVアップロード (スクリーンショットの列順に合わせる) ---
+  // --- 支部変更処理 ---
+  const handleBranchUpdate = async (studentId: string, newBranch: string) => {
+    const { error } = await supabase.from('profiles').update({ branch: newBranch }).eq('id', studentId)
+    if (error) {
+      alert('支部の更新に失敗しました')
+    } else {
+      setStudents(prev => prev.map(s => s.id === studentId ? { ...s, branch: newBranch } : s))
+    }
+  }
+
+  // --- 名簿CSVアップロード ---
   const handleProfileCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -42,15 +51,13 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
         const updates = lines.slice(1).map(line => {
           const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
-          // スクリーンショットの列順: 
-          // 0:支部, 1:氏, 2:名, 3:ヨミガナ, 4:性別, 5:入会日, 6:生年月日, 7:級/段, 8:メールアドレス
           if (!v[8]) return null
           return { 
             name: (v[1] || '') + (v[2] || ''), 
             login_email: v[8].toLowerCase(), 
             kyu: v[7] || '無級', 
-            branch: v[0] || '未設定', // 1列目から支部を取得
-            birthday: v[6] || '',      // 7列目から生年月日を取得
+            branch: v[0] || '未設定',
+            birthday: v[6] || '',
             is_admin: v[8].toLowerCase() === 'mr.pepper0402@gmail.com'
           }
         }).filter(Boolean) as any[]
@@ -102,9 +109,10 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     reader.readAsText(file)
   }
 
-  const dynamicBranches = useMemo(() => {
+  // 既存の全支部リスト（選択用）
+  const allBranchList = useMemo(() => {
     const branches = students.map(s => (s as any).branch).filter(Boolean)
-    return ['すべて', ...Array.from(new Set(branches))]
+    return Array.from(new Set(['池田', '川西', '宝塚', ...branches]))
   }, [students])
 
   const filteredStudents = useMemo(() => {
@@ -132,19 +140,33 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
             </label>
           </div>
           <input type="text" placeholder="名前検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none focus:bg-white focus:text-[#001f3f] mb-2 placeholder:text-white/30" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <div className="text-[9px] font-black text-white/40 mb-1 uppercase tracking-widest">支部フィルタ</div>
           <select className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-[10px] font-black outline-none cursor-pointer" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-            {dynamicBranches.map(b => <option key={b} value={b} className="text-black">{b === 'すべて' ? 'すべての支部' : `${b}支部`}</option>)}
+            <option value="すべて" className="text-black">すべての支部</option>
+            {allBranchList.map(b => <option key={b} value={b} className="text-black">{b}支部</option>)}
           </select>
         </div>
+        
         <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
           {filteredStudents.map(s => (
-            <button key={s.id} onClick={() => setSelectedStudent(s)} className={`w-full p-5 text-left border-l-4 transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
-              <p className="font-black text-sm">{s.name}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{(s as any).branch}支部</span>
-                <span className="text-[9px] font-bold text-orange-500 uppercase">{s.kyu}</span>
+            <div key={s.id} className={`group w-full p-5 border-l-4 transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
+              <div className="flex justify-between items-start cursor-pointer" onClick={() => setSelectedStudent(s)}>
+                <div>
+                  <p className="font-black text-sm">{s.name}</p>
+                  <p className="text-[9px] font-bold text-orange-500 uppercase mt-1">{s.kyu}</p>
+                </div>
               </div>
-            </button>
+              {/* 支部変更ドロップダウン */}
+              <div className="mt-3">
+                <select 
+                  className="bg-gray-100 border-none rounded-md px-2 py-1 text-[9px] font-black text-gray-500 outline-none cursor-pointer hover:bg-gray-200 transition-colors"
+                  value={(s as any).branch}
+                  onChange={(e) => handleBranchUpdate(s.id, e.target.value)}
+                >
+                  {allBranchList.map(b => <option key={b} value={b}>{b}支部</option>)}
+                </select>
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -162,18 +184,26 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
 function EvaluationPanel({ student, isMaster, onRefresh }: any) {
   const allKyuList = ['無級', '準10級', '10級', '準9級', '9級', '準8級', '8級', '準7級', '7級', '準6級', '6級', '準5級', '5級', '準4級', '4級', '準3級', '3級', '準2級', '2級', '準1級', '1級', '初段', '弍段', '参段', '四段', '五段']
-  const belts = ['白帯', '黄帯', '青帯', '橙帯', '紫帯', '緑帯', '茶帯', '黒帯']
-
-  // 年齢・所属判定ロジック
+  
+  // 年齢計算と所属判定
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
-  const isGeneral = age >= 15; // 15歳以上は一般部
+  const isGeneral = age >= 15;
+
+  // タブに表示する帯のリストを属性によってフィルタリング
+  const belts = useMemo(() => {
+    const baseBelts = ['白帯', '黄帯', '青帯', '橙帯', '紫帯', '緑帯', '茶帯', '黒帯'];
+    if (isGeneral) {
+      return baseBelts.filter(b => b !== '橙帯'); // 一般部には橙帯を表示しない
+    } else {
+      return baseBelts.filter(b => b !== '紫帯'); // 少年部には紫帯を表示しない
+    }
+  }, [isGeneral]);
 
   const getAutoTargetBelt = (kyu: string, general: boolean) => {
     const k = kyu || '無級';
     if (k === '無級' || k === '準10級') return '白帯';
     if (k.match(/10|9/)) return '黄帯';
     if (k.match(/8|7/)) return '青帯';
-    // 橙帯・紫帯の判定
     if (k.match(/6|5/)) return general ? '紫帯' : '橙帯'; 
     if (k.match(/4|3/)) return '緑帯';
     if (k.includes('1') || k.includes('2')) return '茶帯';
@@ -181,7 +211,6 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
   }
 
   const targetBelt = getAutoTargetBelt(student.kyu, isGeneral);
-  // 審査項目取得用のDB用帯名称
   const dbBeltName = (targetBelt === '橙帯' || targetBelt === '紫帯') ? '橙帯/紫帯' : targetBelt;
 
   const [viewBelt, setViewBelt] = useState(dbBeltName)
@@ -234,7 +263,7 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
             </div>
           </div>
           <div className="text-right">
-            <p className="text-[10px] font-black text-white/40 mb-1 uppercase tracking-widest">{viewBelt} 評価スコア</p>
+            <p className="text-[10px] font-black text-white/40 mb-1 uppercase tracking-widest">{viewBelt === '橙帯/紫帯' ? targetBelt : viewBelt} スコア</p>
             <p className={`text-7xl font-black tabular-nums ${isScoreReady ? 'text-green-400' : 'text-white'}`}>{totalScore}</p>
           </div>
         </div>
@@ -259,15 +288,15 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
         </div>
       )}
 
-      {/* タブ一覧。橙帯と紫帯はまとめて表示。 */}
+      {/* フィルタリングされた帯タブを表示 */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
         {belts.map(b => {
-          const actualTabName = (b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b;
+          const actualTabKey = (b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b;
           return (
             <button 
               key={b} 
-              onClick={() => setViewBelt(actualTabName)} 
-              className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap transition-all ${viewBelt === actualTabName ? 'bg-[#001f3f] text-white' : 'bg-white text-gray-400'}`}
+              onClick={() => setViewBelt(actualTabKey)} 
+              className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap transition-all ${viewBelt === actualTabKey ? 'bg-[#001f3f] text-white' : 'bg-white text-gray-400'}`}
             >
               {b}
             </button>
