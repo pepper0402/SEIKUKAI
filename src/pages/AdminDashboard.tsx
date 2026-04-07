@@ -68,7 +68,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     }
   }
 
-  // --- CSV系 ---
+  // --- 名簿CSVアップロード ---
   const handleProfileCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
     setIsUploading(true)
@@ -83,8 +83,33 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           return { name: (v[1] || '') + (v[2] || ''), login_email: v[8].toLowerCase(), kyu: v[7] || '無級', branch: v[0] || '未設定', birthday: v[6] || '', is_admin: false }
         }).filter(Boolean) as any[]
         const { error } = await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
-        if (!error) { alert('名簿を更新しました'); loadStudents(); }
+        if (!error) { alert('✅ 名簿を更新しました'); loadStudents(); }
       } catch (err: any) { alert(err.message) } finally { setIsUploading(false); e.target.value = '' }
+    }
+    reader.readAsText(file)
+  }
+
+  // --- 審査基準CSVアップロード ---
+  const handleCriteriaCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return
+    if (!window.confirm('審査基準データを一括登録しますか？')) return
+    setIsUploading(true)
+    const reader = new FileReader()
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
+        const updates = lines.slice(1).map(line => {
+          const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
+          if (!v[0] || !v[2]) return null 
+          return { dan: v[0], examination_type: v[1] || '基本', examination_content: v[2], video_url: v[3] || '' }
+        }).filter(Boolean) as any[]
+        if (updates.length > 0) {
+          const { error } = await supabase.from('criteria').insert(updates)
+          if (error) throw error
+          alert(`✅ 審査項目を ${updates.length} 件登録しました。`)
+        }
+      } catch (err: any) { alert('❌ CSVエラー: ' + err.message) } finally { setIsUploading(false); e.target.value = '' }
     }
     reader.readAsText(file)
   }
@@ -111,21 +136,26 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
             <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase shadow-lg text-white">Logout</button>
           </div>
           
-          <div className="space-y-2 mb-4">
+          <div className="grid grid-cols-1 gap-2 mb-4">
             <button 
               onClick={() => setShowAddForm(!showAddForm)}
               className="w-full py-2 bg-green-600 hover:bg-green-700 rounded-xl text-[9px] font-black transition-all border border-green-500/20"
             >
               ＋ 個別追加
             </button>
-            <label className="block w-full text-center py-2 bg-white/10 hover:bg-white/20 rounded-xl cursor-pointer text-[9px] font-black border border-white/10 transition-all">
-              👤 名簿CSV読込 <input type="file" className="hidden" onChange={handleProfileCsvUpload} />
-            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block text-center py-2 bg-white/10 hover:bg-white/20 rounded-xl cursor-pointer text-[9px] font-black border border-white/10 transition-all">
+                👤 名簿CSV <input type="file" className="hidden" onChange={handleProfileCsvUpload} />
+              </label>
+              <label className="block text-center py-2 bg-orange-500/20 hover:bg-orange-500/40 rounded-xl cursor-pointer text-[9px] font-black border border-orange-500/20 transition-all text-orange-400">
+                📜 審査CSV <input type="file" className="hidden" onChange={handleCriteriaCsvUpload} />
+              </label>
+            </div>
           </div>
 
           {/* 個別追加フォーム */}
           {showAddForm && (
-            <form onSubmit={handleAddStudent} className="mb-4 p-3 bg-white/5 rounded-xl border border-white/10 space-y-2 animate-in fade-in duration-300">
+            <form onSubmit={handleAddStudent} className="mb-4 p-3 bg-white/5 rounded-xl border border-white/10 space-y-2">
               <input type="text" placeholder="氏名" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} />
               <input type="email" placeholder="メール" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={newStudent.login_email} onChange={e => setNewStudent({...newStudent, login_email: e.target.value})} />
               <div className="flex gap-2">
