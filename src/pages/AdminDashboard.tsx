@@ -7,12 +7,14 @@ export default function AdminDashboard({ profile }: { profile: Profile; onReload
 
   return (
     <div className="min-h-screen bg-gray-50 text-[#001f3f]">
+      {/* ヘッダー */}
       <div className="bg-[#001f3f] px-6 py-4 flex justify-between items-center shadow-lg">
         <h1 className="text-white font-black text-lg tracking-[0.2em]">誠空会 管理</h1>
         <button onClick={() => supabase.auth.signOut()} className="text-white/60 text-[10px] font-bold border border-white/20 rounded-full px-4 py-1.5 hover:bg-white/10 transition-all">ログアウト</button>
       </div>
 
-      <div className="flex bg-[#001f3f] border-t border-white/10">
+      {/* タブナビゲーション */}
+      <div className="flex bg-[#001f3f] border-t border-white/10 sticky top-0 z-10">
         {['生徒一覧', '評価入力', '審査基準'].map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-4 text-[10px] font-black tracking-widest transition-all ${tab === t ? 'text-white border-b-4 border-[#ff6600]' : 'text-white/40'}`}>
@@ -30,11 +32,10 @@ export default function AdminDashboard({ profile }: { profile: Profile; onReload
   )
 }
 
+// --- 生徒一覧タブ ---
 function StudentsTab({ onSelect }: { onSelect: (s: Profile) => void }) {
   const [students, setStudents] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
-  const [processing, setProcessing] = useState(false)
-  const [log, setLog] = useState<string[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -45,108 +46,117 @@ function StudentsTab({ onSelect }: { onSelect: (s: Profile) => void }) {
 
   useEffect(() => { load() }, [load])
 
-  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = async (event) => {
-      const text = event.target?.result as string
-      const lines = text.split('\n')
-      const updates = lines.slice(1).map(line => {
-        const v = line.split(',').map(s => s.trim())
-        if (v.length < 9) return null
-        return { name: v[1] + v[2], login_email: v[8], kyu: v[7] || '無級', is_admin: false }
-      }).filter(item => item && item.login_email) as any[]
-      
-      const { error } = await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
-      if (error) alert(error.message); else { alert(`${updates.length}名の名簿を更新しました。`); load(); }
-    }
-    reader.readAsText(file)
-  }
-
-  // ★「ゆっくり・確実に」登録するスクリプト
-  const runBatchRegistration = async () => {
-    if (students.length === 0) return alert('名簿がありません')
-    if (!confirm(`全員のログイン許可を開始します。設定が変更できないため、制限がかかった場合は自動で1分ずつ待機しながら進みます。このまま画面を開いておいてください。`)) return
-
-    setProcessing(true)
-    setLog(["🚀 処理を開始します..."])
-    let success = 0, skip = 0, errorCount = 0
-
-    for (const s of students) {
-      const email = s.login_email.replace(/[\s\t\n\r　]/g, '').trim().toLowerCase()
-      if (!email.includes('@')) continue
-
-      setLog(prev => [`⏳ ${s.name} を処理中...`, ...prev.slice(0, 5)])
-
-      let registered = false
-      while (!registered) {
-        const { error } = await supabase.auth.signUp({
-          email: email,
-          password: '123456',
-        })
-
-        if (!error) {
-          success++
-          setLog(prev => [`✅ ${s.name}: 完了`, ...prev.slice(0, 5)])
-          registered = true
-        } else if (error.message.includes('already registered')) {
-          skip++
-          setLog(prev => [`ℹ️ ${s.name}: 登録済み`, ...prev.slice(0, 5)])
-          registered = true
-        } else if (error.message.includes('rate limit') || error.status === 429) {
-          // 制限がかかったら1分待機して同じ人をリトライ
-          setLog(prev => [`⚠️ 制限中... 60秒待機して再試行します`, ...prev.slice(0, 5)])
-          await new Promise(r => setTimeout(r, 60000)) 
-        } else {
-          errorCount++
-          setLog(prev => [`❌ ${s.name}: ${error.message}`, ...prev.slice(0, 5)])
-          registered = true // 他のエラーは次へ
-        }
-      }
-      // 成功後も念のため3秒あける（制限にかかりにくくする）
-      await new Promise(r => setTimeout(r, 3000))
-    }
-
-    setProcessing(false)
-    alert(`完了しました！\n新規成功: ${success} / 登録済: ${skip} / エラー: ${errorCount}`)
-    load()
-  }
-
   if (loading) return <Loader />
 
   return (
-    <div className="p-3">
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <label className="bg-white p-5 rounded-3xl border-2 border-dashed border-gray-200 text-center cursor-pointer active:bg-gray-50 shadow-sm">
-          <span className="text-[10px] font-black text-gray-300 block mb-1 uppercase tracking-widest">Step 1</span>
-          <span className="text-sm font-black text-[#001f3f]">CSV読込</span>
-          <input type="file" accept=".csv" className="hidden" onChange={handleCsvUpload} />
-        </label>
-        <button onClick={runBatchRegistration} disabled={processing} className="bg-[#ff6600] text-white p-5 rounded-3xl font-black shadow-lg shadow-orange-200 disabled:opacity-50 active:scale-95 transition-all text-sm">
-          <span className="text-[10px] opacity-60 block mb-1 uppercase tracking-widest">Step 2</span>
-          ログイン許可
+    <div className="p-4 space-y-3">
+      {students.map(s => (
+        <button key={s.id} onClick={() => onSelect(s)} className="w-full bg-white p-5 rounded-3xl border border-gray-100 flex justify-between items-center shadow-sm active:scale-[0.98] transition-all text-left">
+          <div>
+            <p className="font-black text-[#001f3f] text-base">{s.name}</p>
+            <p className="text-[10px] font-bold text-gray-400 mt-1 uppercase">{s.kyu || '無級'}</p>
+          </div>
+          <div className="bg-gray-50 text-[#ff6600] font-black text-[10px] px-4 py-2 rounded-xl border border-orange-50">評価 ＞</div>
         </button>
+      ))}
+    </div>
+  )
+}
+
+// --- 評価入力タブ (ここがメイン機能) ---
+function EvalTab({ student, onBack }: { student: Profile | null; onBack: () => void }) {
+  const [criteria, setCriteria] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const getTargetBelt = (kyu: string) => {
+    if (!kyu || kyu === '無級') return '白帯';
+    if (kyu.includes('10級') || kyu.includes('9級')) return '黄帯';
+    if (kyu.includes('8級') || kyu.includes('7級')) return '青帯';
+    if (kyu.includes('6級') || kyu.includes('5級')) return '橙帯';
+    if (kyu.includes('4級') || kyu.includes('3級')) return '緑帯';
+    if (kyu.includes('2級') || kyu.includes('1級')) return '茶帯';
+    if (kyu.includes('段')) return '黒帯';
+    return '白帯';
+  }
+
+  useEffect(() => {
+    if (!student) return
+    async function loadData() {
+      setLoading(true)
+      const targetBelt = getTargetBelt(student?.kyu || '無級')
+      const { data: crit } = await supabase.from('criteria').select('*').eq('dan', targetBelt).order('id')
+      const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student?.id)
+
+      const combined = (crit || []).map(c => ({
+        ...c,
+        grade: evals?.find(e => e.criterion_id === c.id)?.grade || null
+      }))
+      setCriteria(combined)
+      setLoading(false)
+    }
+    loadData()
+  }, [student])
+
+  const saveGrade = async (criterionId: number, grade: string) => {
+    if (!student) return
+    
+    // 楽観的更新（先に画面を書き換えてサクサク感を出す）
+    setCriteria(prev => prev.map(c => c.id === criterionId ? { ...c, grade } : c))
+
+    const { error } = await supabase
+      .from('evaluations')
+      .upsert({
+        student_id: student.id,
+        criterion_id: criterionId,
+        grade: grade,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'student_id,criterion_id' })
+
+    if (error) {
+      alert("保存に失敗しました: " + error.message)
+      // 失敗したらリロードして戻す
+    }
+  }
+
+  if (!student) return <div className="p-20 text-center font-bold text-gray-300">生徒を選択してください</div>
+  if (loading) return <Loader />
+
+  return (
+    <div className="p-4">
+      <div className="flex justify-between items-end mb-6 px-2">
+        <div>
+          <button onClick={onBack} className="text-[#ff6600] font-black text-[10px] uppercase mb-2">← 戻る</button>
+          <h2 className="text-2xl font-black">{student.name} <span className="text-xs text-gray-400 font-bold ml-1">{student.kyu}</span></h2>
+        </div>
+        <div className="text-right">
+          <p className="text-[9px] font-black text-gray-300 uppercase">Target</p>
+          <p className="text-sm font-black text-[#ff6600]">{getTargetBelt(student.kyu)}項目</p>
+        </div>
       </div>
 
-      {processing && (
-        <div className="mb-6 bg-[#001f3f] p-5 rounded-3xl font-mono text-[11px] h-48 overflow-y-auto shadow-inner leading-relaxed">
-          {log.map((l, i) => (
-            <div key={i} className={l.includes('✅') ? 'text-green-400' : l.includes('❌') ? 'text-red-400' : l.includes('⚠️') ? 'text-yellow-400' : 'text-gray-400'}>
-              {l}
+      <div className="space-y-4">
+        {criteria.map((c) => (
+          <div key={c.id} className="bg-white p-5 rounded-[2.5rem] shadow-sm border border-gray-100 transition-all">
+            <div className="mb-4 px-2">
+              <span className="text-[8px] font-black text-white bg-[#001f3f] px-2 py-0.5 rounded-full uppercase mr-2 tracking-tighter">{c.examination_type}</span>
+              <p className="text-sm font-bold mt-1.5 leading-tight">{c.examination_content}</p>
             </div>
-          ))}
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {students.map(s => (
-          <div key={s.id} className="bg-white p-5 rounded-3xl border border-gray-100 flex justify-between items-center shadow-sm">
-            <div className="text-left leading-tight">
-              <p className="font-black text-[#001f3f] text-base">{s.name}</p>
-              <p className="text-[10px] font-bold text-gray-300 mt-1">{s.login_email}</p>
+            
+            <div className="grid grid-cols-4 gap-2">
+              {['A', 'B', 'C', 'D'].map(g => (
+                <button
+                  key={g}
+                  onClick={() => saveGrade(c.id, g)}
+                  className={`py-3 rounded-2xl font-black text-lg transition-all ${
+                    c.grade === g 
+                      ? 'bg-[#ff6600] text-white shadow-lg shadow-orange-100 scale-105' 
+                      : 'bg-gray-50 text-gray-300 active:bg-gray-100'
+                  }`}
+                >
+                  {g}
+                </button>
+              ))}
             </div>
-            <button onClick={() => onSelect(s)} className="bg-gray-50 text-[#001f3f] font-black text-[10px] px-5 py-2.5 rounded-2xl hover:bg-gray-100 transition-colors">評価入力</button>
           </div>
         ))}
       </div>
@@ -154,6 +164,5 @@ function StudentsTab({ onSelect }: { onSelect: (s: Profile) => void }) {
   )
 }
 
-function EvalTab({ student, onBack }: any) { return <div className="p-20 text-center font-bold text-gray-200">（評価入力画面・準備中）</div> }
-function CriteriaTab() { return <div className="p-20 text-center font-bold text-gray-200">（審査基準・準備中）</div> }
+function CriteriaTab() { return <div className="p-20 text-center font-bold text-gray-200 uppercase tracking-widest">審査基準設定（準備中）</div> }
 function Loader() { return <div className="flex justify-center py-20"><div className="w-10 h-10 border-4 border-[#ff6600] border-t-transparent rounded-full animate-spin" /></div> }
