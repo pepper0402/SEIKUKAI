@@ -31,7 +31,7 @@ export default function App({ admin }: { admin?: boolean }) {
   }
 
   if (!ready) return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
+    <div className="min-h-screen bg-[#001f3f] flex items-center justify-center">
       <div className="text-white text-xl">読み込み中...</div>
     </div>
   )
@@ -40,9 +40,9 @@ export default function App({ admin }: { admin?: boolean }) {
 
   if (admin) {
     if (!profile.is_admin) return (
-      <div className="min-h-screen bg-black flex items-center justify-center flex-col gap-4">
+      <div className="min-h-screen bg-[#001f3f] flex items-center justify-center flex-col gap-4">
         <p className="text-white">管理者アカウントではありません</p>
-        <button onClick={() => supabase.auth.signOut()} className="bg-red-700 text-white px-6 py-2 rounded">ログアウト</button>
+        <button onClick={() => supabase.auth.signOut()} className="bg-[#ff6600] text-white px-6 py-2 rounded">ログアウト</button>
       </div>
     )
     return <AdminDashboard profile={profile} onReload={() => loadProfile(profile.login_email)} />
