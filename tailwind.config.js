@@ -7,10 +7,8 @@ export default {
   theme: {
     extend: {
       colors: {
-        // メインカラー：誠空会オレンジ
-        'seikukai-orange': '#ff6600', 
-        // サブカラー：誠空会ネイビー
-        'seikukai-navy': '#001f3f', 
+        'seikukai-orange': '#ff6600',
+        'seikukai-navy': '#001f3f',
       },
     },
   },
