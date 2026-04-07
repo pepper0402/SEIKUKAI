@@ -34,7 +34,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   useEffect(() => { 
     loadStudents() 
-    // 初期表示でスマホの場合はサイドバーを閉じておく
     if (window.innerWidth < 768) setIsSidebarOpen(false)
   }, [loadStudents])
 
@@ -55,7 +54,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     if (error) {
       alert('エラー: ' + error.message)
     } else {
-      alert('追加完了');
+      alert('道場生を追加しました');
       setNewStudent({ name: '', login_email: '', branch: '池田', birthday: '', kyu: '無級' });
       setShowAddForm(false);
       loadStudents();
@@ -158,28 +157,28 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           </div>
           
           <div className="grid grid-cols-1 gap-2 mb-4">
-            <button onClick={() => setShowAddForm(!showAddForm)} className="w-full py-2 bg-green-600 rounded-xl text-[9px] font-black border border-green-500/20">＋ 個別追加</button>
+            <button onClick={() => setShowAddForm(!showAddForm)} className="w-full py-2 bg-green-600 rounded-xl text-[9px] font-black border border-green-500/20 transition-all hover:bg-green-700">＋ 個別追加</button>
             <div className="grid grid-cols-2 gap-2">
-              <label className="block text-center py-2 bg-white/10 rounded-xl cursor-pointer text-[9px] font-black border border-white/10">👤 名簿CSV <input type="file" className="hidden" onChange={handleProfileCsvUpload} /></label>
-              <label className="block text-center py-2 bg-orange-500/20 rounded-xl cursor-pointer text-[9px] font-black border border-orange-500/20 text-orange-400">📜 審査CSV <input type="file" className="hidden" onChange={handleCriteriaCsvUpload} /></label>
+              <label className="block text-center py-2 bg-white/10 rounded-xl cursor-pointer text-[9px] font-black border border-white/10 hover:bg-white/20">👤 名簿CSV <input type="file" className="hidden" onChange={handleProfileCsvUpload} /></label>
+              <label className="block text-center py-2 bg-orange-500/20 rounded-xl cursor-pointer text-[9px] font-black border border-orange-500/20 text-orange-400 hover:bg-orange-500/30">📜 審査CSV <input type="file" className="hidden" onChange={handleCriteriaCsvUpload} /></label>
             </div>
           </div>
 
           {showAddForm && (
             <form onSubmit={handleAddStudent} className="mb-4 p-3 bg-white/5 rounded-xl border border-white/10 space-y-2">
-              <input type="text" placeholder="氏名" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none" value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} />
-              <input type="email" placeholder="メール" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none" value={newStudent.login_email} onChange={e => setNewStudent({...newStudent, login_email: e.target.value})} />
+              <input type="text" placeholder="氏名" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} />
+              <input type="email" placeholder="メール" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={newStudent.login_email} onChange={e => setNewStudent({...newStudent, login_email: e.target.value})} />
               <div className="flex gap-2">
                 <input type="date" className="flex-1 bg-white/10 rounded-lg px-2 py-1.5 text-[10px] outline-none" value={newStudent.birthday} onChange={e => setNewStudent({...newStudent, birthday: e.target.value})} />
                 <select className="flex-1 bg-white/10 rounded-lg px-2 py-1.5 text-[10px] outline-none" value={newStudent.branch} onChange={e => setNewStudent({...newStudent, branch: e.target.value})}>
                   {['池田', '川西', '宝塚'].map(b => <option key={b} value={b} className="text-black">{b}</option>)}
                 </select>
               </div>
-              <button type="submit" className="w-full py-2 bg-orange-500 rounded-lg text-[9px] font-black">保存</button>
+              <button type="submit" className="w-full py-2 bg-orange-500 rounded-lg text-[9px] font-black hover:bg-orange-600 transition-colors">保存する</button>
             </form>
           )}
 
-          <input type="text" placeholder="検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none mb-2" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <input type="text" placeholder="検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none mb-2 focus:bg-white focus:text-[#001f3f]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           <select className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-[10px] font-black outline-none" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
             <option value="すべて" className="text-black">すべての支部</option>
             {allBranchList.map(b => <option key={b} value={b} className="text-black">{b}支部</option>)}
@@ -194,7 +193,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
                   <p className="font-black text-sm">{s.name}</p>
                   <p className="text-[9px] font-bold text-orange-500 mt-1 uppercase">{s.kyu}</p>
                 </div>
-                <button onClick={() => handleDeleteStudent(s)} className="text-gray-300 hover:text-red-500 p-1">
+                <button onClick={() => handleDeleteStudent(s)} className="text-gray-300 hover:text-red-500 p-1 transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 </button>
               </div>
@@ -253,7 +252,14 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
     async function fetchEvals() {
       const { data: crit } = await supabase.from('criteria').select('*').eq('dan', viewBelt).order('id')
       const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
-      setCriteria((crit || []).map(c => ({ ...c, grade: evals?.find(e => e.criterion_id === c.id)?.grade || null })))
+      
+      setCriteria((crit || []).map(c => {
+        const existingEval = evals?.find(e => e.criterion_id === c.id);
+        return { 
+          ...c, 
+          grade: existingEval ? existingEval.grade : 'D' // 評価がなければデフォルトD
+        };
+      }))
     }
     fetchEvals()
   }, [student.id, viewBelt])
@@ -266,6 +272,15 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
       const { error } = await supabase.from('profiles').update({ kyu: newKyu }).eq('id', student.id)
       if (!error) { alert('✅ 更新しました'); onRefresh(); }
     }
+  }
+
+  const updateGrade = async (criterionId: number, newGrade: string) => {
+    setCriteria(prev => prev.map(item => item.id === criterionId ? { ...item, grade: newGrade } : item));
+    await supabase.from('evaluations').upsert({ 
+      student_id: student.id, 
+      criterion_id: criterionId, 
+      grade: newGrade 
+    }, { onConflict: 'student_id,criterion_id' });
   }
 
   return (
@@ -292,7 +307,7 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
       {isMaster && (
         <div className={`bg-white p-6 rounded-[30px] shadow-lg border-2 mb-8 ${isScoreReady ? 'border-green-500' : 'border-gray-100'}`}>
           <h3 className="text-xs font-black text-[#001f3f] uppercase mb-4">🥋 昇級の実行</h3>
-          <select value={student.kyu || '無級'} onChange={(e) => handleKyuChange(e.target.value)} className="w-full bg-[#f0f2f5] rounded-xl px-4 py-4 text-base font-black outline-none appearance-none">
+          <select value={student.kyu || '無級'} onChange={(e) => handleKyuChange(e.target.value)} className="w-full bg-[#f0f2f5] rounded-xl px-4 py-4 text-base font-black outline-none appearance-none cursor-pointer focus:bg-white transition-all">
             {allKyuList.map(k => <option key={k} value={k}>{k}</option>)}
           </select>
         </div>
@@ -302,24 +317,21 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
         {belts.map(b => {
           const tabKey = (b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b;
           return (
-            <button key={b} onClick={() => setViewBelt(tabKey)} className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap transition-all ${viewBelt === tabKey ? 'bg-[#001f3f] text-white' : 'bg-white text-gray-400'}`}>{b}</button>
+            <button key={b} onClick={() => setViewBelt(tabKey)} className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap transition-all ${viewBelt === tabKey ? 'bg-[#001f3f] text-white shadow-md' : 'bg-white text-gray-400 hover:text-[#001f3f]'}`}>{b}</button>
           )
         })}
       </div>
 
       <div className="space-y-4">
         {criteria.map(c => (
-          <div key={c.id} className="bg-white p-4 md:p-6 rounded-[30px] shadow-sm border border-gray-100">
+          <div key={c.id} className="bg-white p-4 md:p-6 rounded-[30px] shadow-sm border border-gray-100 transition-all hover:shadow-md">
             <div className="flex flex-col mb-4">
               <span className="text-[9px] font-black text-gray-300 uppercase mb-1">{c.examination_type}</span>
               <p className="text-sm font-bold text-[#001f3f]">{c.examination_content}</p>
             </div>
             <div className="grid grid-cols-4 gap-2">
               {['A', 'B', 'C', 'D'].map(g => (
-                <button key={g} onClick={() => {
-                  setCriteria(prev => prev.map(item => item.id === c.id ? { ...item, grade: g } : item));
-                  supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: g }, { onConflict: 'student_id,criterion_id' }).then();
-                }} className={`py-3 rounded-xl font-black ${c.grade === g ? 'bg-[#001f3f] text-white' : 'bg-gray-50 text-gray-300'}`}>{g}</button>
+                <button key={g} onClick={() => updateGrade(c.id, g)} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-300 active:bg-gray-100'}`}>{g}</button>
               ))}
             </div>
           </div>
