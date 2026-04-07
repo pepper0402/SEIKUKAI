@@ -4,7 +4,9 @@ import { supabase, Profile } from '../lib/supabase'
 // --- ユーティリティ: 年齢計算 ---
 const calculateAge = (birthday: string) => {
   if (!birthday) return 0;
-  const birthDate = new Date(birthday);
+  // CSVの「1972/1/5」形式をパース
+  const birthDate = new Date(birthday.replace(/\//g, '-'));
+  if (isNaN(birthDate.getTime())) return 0;
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
   const m = today.getMonth() - birthDate.getMonth();
@@ -28,7 +30,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   useEffect(() => { loadStudents() }, [loadStudents])
 
-  // --- 名簿CSVアップロード (grade_levelを除去しbirthdayを使用) ---
+  // --- 名簿CSVアップロード (スクリーンショットの列順に合わせる) ---
   const handleProfileCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -40,13 +42,15 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
         const updates = lines.slice(1).map(line => {
           const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
+          // スクリーンショットの列順: 
+          // 0:支部, 1:氏, 2:名, 3:ヨミガナ, 4:性別, 5:入会日, 6:生年月日, 7:級/段, 8:メールアドレス
           if (!v[8]) return null
           return { 
             name: (v[1] || '') + (v[2] || ''), 
             login_email: v[8].toLowerCase(), 
             kyu: v[7] || '無級', 
-            branch: v[10] || '未設定',
-            birthday: v[3] || '', // 生年月日
+            branch: v[0] || '未設定', // 1列目から支部を取得
+            birthday: v[6] || '',      // 7列目から生年月日を取得
             is_admin: v[8].toLowerCase() === 'mr.pepper0402@gmail.com'
           }
         }).filter(Boolean) as any[]
@@ -116,7 +120,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
       <div className="w-full md:w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl z-10">
         <div className="p-6 bg-[#001f3f] text-white">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-lg font-black italic tracking-tighter">SEIKUKAI <span className="text-orange-400">ADMIN</span></h1>
+            <h1 className="text-lg font-black italic tracking-tighter text-white uppercase">SEIKUKAI <span className="text-orange-400">ADMIN</span></h1>
             <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase hover:bg-red-700 transition-all shadow-lg text-white">Logout</button>
           </div>
           <div className="space-y-2 mb-4">
@@ -127,8 +131,8 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
               📜 審査基準CSV読込 <input type="file" className="hidden" onChange={handleCriteriaCsvUpload} />
             </label>
           </div>
-          <input type="text" placeholder="名前検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none focus:bg-white focus:text-[#001f3f] mb-2" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-          <select className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-[10px] font-black outline-none" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+          <input type="text" placeholder="名前検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none focus:bg-white focus:text-[#001f3f] mb-2 placeholder:text-white/30" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <select className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-[10px] font-black outline-none cursor-pointer" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
             {dynamicBranches.map(b => <option key={b} value={b} className="text-black">{b === 'すべて' ? 'すべての支部' : `${b}支部`}</option>)}
           </select>
         </div>
@@ -137,7 +141,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
             <button key={s.id} onClick={() => setSelectedStudent(s)} className={`w-full p-5 text-left border-l-4 transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
               <p className="font-black text-sm">{s.name}</p>
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{(s as any).branch}</span>
+                <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{(s as any).branch}支部</span>
                 <span className="text-[9px] font-bold text-orange-500 uppercase">{s.kyu}</span>
               </div>
             </button>
@@ -160,22 +164,27 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
   const allKyuList = ['無級', '準10級', '10級', '準9級', '9級', '準8級', '8級', '準7級', '7級', '準6級', '6級', '準5級', '5級', '準4級', '4級', '準3級', '3級', '準2級', '2級', '準1級', '1級', '初段', '弍段', '参段', '四段', '五段']
   const belts = ['白帯', '黄帯', '青帯', '橙帯', '紫帯', '緑帯', '茶帯', '黒帯']
 
-  // 年齢・所属判定
+  // 年齢・所属判定ロジック
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
-  const isGeneral = age >= 15; // 15歳（高校生）以上を一般部
+  const isGeneral = age >= 15; // 15歳以上は一般部
 
   const getAutoTargetBelt = (kyu: string, general: boolean) => {
     const k = kyu || '無級';
     if (k === '無級' || k === '準10級') return '白帯';
     if (k.match(/10|9/)) return '黄帯';
     if (k.match(/8|7/)) return '青帯';
+    // 橙帯・紫帯の判定
     if (k.match(/6|5/)) return general ? '紫帯' : '橙帯'; 
     if (k.match(/4|3/)) return '緑帯';
     if (k.includes('1') || k.includes('2')) return '茶帯';
     return '黒帯';
   }
 
-  const [viewBelt, setViewBelt] = useState(getAutoTargetBelt(student.kyu, isGeneral))
+  const targetBelt = getAutoTargetBelt(student.kyu, isGeneral);
+  // 審査項目取得用のDB用帯名称
+  const dbBeltName = (targetBelt === '橙帯' || targetBelt === '紫帯') ? '橙帯/紫帯' : targetBelt;
+
+  const [viewBelt, setViewBelt] = useState(dbBeltName)
   const [criteria, setCriteria] = useState<any[]>([])
 
   useEffect(() => {
@@ -209,7 +218,7 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
           <div>
             <div className="flex items-center gap-3 mb-2">
               <h2 className="text-3xl font-black">{student.name}</h2>
-              <span className={`px-3 py-1 rounded-lg text-[10px] font-black ${isGeneral ? 'bg-purple-600' : 'bg-orange-500'}`}>
+              <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${isGeneral ? 'bg-purple-600' : 'bg-orange-500'}`}>
                 {isGeneral ? '一般部' : '少年部'}
               </span>
             </div>
@@ -220,7 +229,7 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
               </div>
               <div>
                 <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">現在の帯</p>
-                <p className="text-xl font-black">{getAutoTargetBelt(student.kyu, isGeneral)}</p>
+                <p className="text-xl font-black">{targetBelt}</p>
               </div>
             </div>
           </div>
@@ -234,14 +243,14 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
       {isMaster && (
         <div className={`bg-white p-6 rounded-[30px] shadow-lg border-2 mb-8 ${isScoreReady ? 'border-green-500' : 'border-gray-100'}`}>
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xs font-black text-[#001f3f]">🥋 昇段・昇級の実行</h3>
+            <h3 className="text-xs font-black text-[#001f3f] uppercase">🥋 昇段・昇級の実行</h3>
             {isScoreReady && <span className="text-[9px] bg-green-100 text-green-600 px-3 py-1 rounded-full font-black">昇段可能</span>}
           </div>
           <select 
             disabled={!isScoreReady}
             value={student.kyu || '無級'}
             onChange={(e) => handleKyuChange(e.target.value)}
-            className="w-full bg-[#f0f2f5] border-none rounded-xl px-4 py-4 text-base font-black text-[#001f3f] outline-none appearance-none"
+            className="w-full bg-[#f0f2f5] border-none rounded-xl px-4 py-4 text-base font-black text-[#001f3f] outline-none appearance-none cursor-pointer"
           >
             {allKyuList.map(k => (
               <option key={k} value={k}>{k === student.kyu ? `現在の設定: ${k}` : k}</option>
@@ -250,12 +259,20 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
         </div>
       )}
 
+      {/* タブ一覧。橙帯と紫帯はまとめて表示。 */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
-        {belts.map(b => (
-          <button key={b} onClick={() => setViewBelt(b)} className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap transition-all ${viewBelt === b ? 'bg-[#001f3f] text-white' : 'bg-white text-gray-400'}`}>
-            {b}
-          </button>
-        ))}
+        {belts.map(b => {
+          const actualTabName = (b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b;
+          return (
+            <button 
+              key={b} 
+              onClick={() => setViewBelt(actualTabName)} 
+              className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap transition-all ${viewBelt === actualTabName ? 'bg-[#001f3f] text-white' : 'bg-white text-gray-400'}`}
+            >
+              {b}
+            </button>
+          )
+        })}
       </div>
 
       <div className="space-y-4">
