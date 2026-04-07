@@ -20,48 +20,31 @@ const gradeToScore = (grade: string | null) => {
   return 0;
 };
 
-// 帯の順序を定義（履歴の並び替え用）
-const BELT_ORDER = ['白帯', '黄帯', '青帯', '橙帯', '紫帯', '緑帯', '茶帯', '黒帯'];
-
 export default function StudentPortal({ profile }: { profile: Profile }) {
   const [currentCriteria, setCurrentCriteria] = useState<any[]>([])
-  const [history, setHistory] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const targetBelt = getTargetBelt(profile.kyu)
 
   useEffect(() => {
     async function loadData() {
       setLoading(true)
-      
-      // 1. 全ての審査基準と自分の全評価を取得
-      const { data: allCriteria } = await supabase.from('criteria').select('*')
-      const { data: allEvals } = await supabase.from('evaluations').select('*').eq('student_id', profile.id)
+      const { data: criteriaData } = await supabase
+        .from('criteria')
+        .select('*')
+        .eq('dan', targetBelt)
+        .order('id', { ascending: true })
 
-      if (allCriteria && allEvals) {
-        // 全データを帯（dan）ごとにグループ化
-        const groupedByBelt: Record<string, any[]> = {};
-        
-        allCriteria.forEach(c => {
-          const evalEntry = allEvals.find(e => e.criterion_id === c.id);
-          if (!groupedByBelt[c.dan]) groupedByBelt[c.dan] = [];
-          groupedByBelt[c.dan].push({ ...c, grade: evalEntry?.grade || null });
-        });
+      const { data: scoresData } = await supabase
+        .from('evaluations')
+        .select('*')
+        .eq('student_id', profile.id)
 
-        // 現在の目標と履歴に分ける
-        const historyData: any[] = [];
-        Object.entries(groupedByBelt).forEach(([belt, items]) => {
-          const score = items.reduce((acc, curr) => acc + gradeToScore(curr.grade), 0);
-          if (belt === targetBelt) {
-            setCurrentCriteria(items);
-          } else if (score >= 80) { // 80点以上＝合格済み履歴とする
-            historyData.push({ belt, score, items });
-          }
-        });
+      const combined = (criteriaData || []).map(c => {
+        const scoreEntry = scoresData?.find(s => s.criterion_id === c.id);
+        return { ...c, grade: scoreEntry?.grade || null };
+      });
 
-        // 履歴を帯の順（昇順）にソート
-        historyData.sort((a, b) => BELT_ORDER.indexOf(a.belt) - BELT_ORDER.indexOf(b.belt));
-        setHistory(historyData);
-      }
+      setCurrentCriteria(combined)
       setLoading(false)
     }
     loadData()
@@ -74,34 +57,78 @@ export default function StudentPortal({ profile }: { profile: Profile }) {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20 text-[#001f3f]">
-      {/* ヘッダー */}
-      <div className="bg-[#001f3f] px-6 pt-12 pb-10 rounded-b-[40px] shadow-2xl relative">
-        <div className="absolute bottom-0 left-0 w-full h-1.5 bg-[#ff6600]"></div>
-        <h1 className="text-white text-3xl font-black tracking-tighter mb-1">{profile.name}</h1>
-        <p className="text-[#ff6600] font-bold text-xs uppercase tracking-widest">{profile.kyu} 保持</p>
+      {/* コンパクトなヘッダー */}
+      <div className="bg-[#001f3f] px-6 py-8 rounded-b-[30px] shadow-lg">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-white text-2xl font-black tracking-tighter">{profile.name}</h1>
+            <p className="text-[#ff6600] font-bold text-xs tracking-widest">{profile.kyu} / {targetBelt}挑戦中</p>
+          </div>
+          <div className="text-right text-white">
+            <p className="text-[10px] font-black opacity-50 uppercase">Score</p>
+            <p className="text-3xl font-black">{totalScore}<span className="text-sm font-bold opacity-50">/100</span></p>
+          </div>
+        </div>
+        
+        {/* 合格ゲージ */}
+        <div className="mt-6">
+          <div className="flex justify-between text-[10px] font-black text-white/50 mb-1.5 uppercase tracking-widest">
+            <span>Progress</span>
+            <span>{isEligible ? '審査可能' : `あと ${80 - totalScore}点`}</span>
+          </div>
+          <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+            <div 
+              className={`h-full transition-all duration-1000 ${isEligible ? 'bg-green-400' : 'bg-[#ff6600]'}`}
+              style={{ width: `${Math.min(totalScore, 100)}%` }}
+            ></div>
+          </div>
+        </div>
       </div>
 
-      <div className="px-5 -mt-6">
-        {/* 現在のスコアボード */}
-        <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 mb-8 text-center">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">現在の挑戦: {targetBelt}</p>
-          <div className="flex justify-center items-baseline mb-4">
-            <span className="text-6xl font-black">{totalScore}</span>
-            <span className="text-xl font-bold ml-1 text-gray-300">/ 100</span>
+      <div className="px-4 mt-6">
+        {/* 審査項目リスト */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="bg-gray-50 px-5 py-3 border-b border-gray-100">
+            <h2 className="font-black text-sm flex items-center gap-2">
+              <span className="w-1 h-4 bg-[#ff6600] rounded-full"></span>
+              {targetBelt} 審査項目
+            </h2>
           </div>
-          {isEligible ? (
-            <div className="bg-[#ff6600] text-white py-4 rounded-2xl font-black text-sm animate-bounce shadow-lg shadow-orange-200">審査可能です！</div>
-          ) : (
-            <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-              <div className="bg-[#ff6600] h-full transition-all duration-1000" style={{ width: `${totalScore}%` }}></div>
-            </div>
-          )}
-        </div>
+          
+          <div className="divide-y divide-gray-50">
+            {currentCriteria.map((c) => (
+              <div key={c.id} className="p-4 flex items-center gap-4">
+                {/* 評価 A-D */}
+                <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${
+                  c.grade === 'A' ? 'bg-[#ff6600] text-white' : 
+                  c.grade ? 'bg-gray-100 text-[#001f3f]' : 'bg-gray-50 text-gray-200'
+                }`}>
+                  {c.grade || '-'}
+                </div>
 
-        {/* 履歴セクション */}
-        {history.length > 0 && (
-          <div className="mb-8">
-            <h2 className="font-black text-sm text-gray-400 mb-4 px-2 uppercase tracking-[0.2em]">合格済みの記録</h2>
-            <div className="flex gap-3 overflow-x-auto pb-4 no-scrollbar">
-              {history.map((h) => (
-                <div key={h.belt} className="flex-shrink
+                {/* 内容 */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">{c.examination_type}</span>
+                    {/* 動画リンクがある場合のみ表示 */}
+                    {c.video_url && (
+                      <a 
+                        href={c.video_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-0.5 text-[8px] font-black text-[#ff6600] bg-orange-50 px-1.5 py-0.5 rounded-full hover:bg-orange-100 transition-colors"
+                      >
+                        ▶ 動画でお手本を見る
+                      </a>
+                    )}
+                  </div>
+                  <p className="text-sm font-bold text-[#001f3f] truncate">{c.examination_content}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
