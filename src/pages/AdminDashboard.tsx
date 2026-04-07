@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase, Profile } from '../lib/supabase'
 
-// --- ユーティリティ: 年齢計算 ---
 const calculateAge = (birthday: string) => {
   if (!birthday) return 0;
   const birthDate = new Date(birthday.replace(/\//g, '-'));
@@ -18,9 +17,8 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   const [selectedStudent, setSelectedStudent] = useState<Profile | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [branchFilter, setBranchFilter] = useState('すべて')
-  const [isUploading, setIsUploading] = useState(false)
-  
-  // 個別追加用フォームの状態
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true) // サイドバー開閉状態
+
   const [showAddForm, setShowAddForm] = useState(false)
   const [newStudent, setNewStudent] = useState({ name: '', login_email: '', branch: '池田', birthday: '', kyu: '無級' })
 
@@ -33,24 +31,27 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   useEffect(() => { loadStudents() }, [loadStudents])
 
-  // --- 個別追加実行 ---
+  // 道場生選択時の挙動
+  const handleSelectStudent = (student: Profile) => {
+    setSelectedStudent(student)
+    // スマホサイズ（md未満）の場合は自動でサイドバーを閉じる
+    if (window.innerWidth < 768) {
+      setIsSidebarOpen(false)
+    }
+  }
+
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newStudent.name || !newStudent.login_email) return alert('名前とメールアドレスは必須です')
-
     const { error } = await supabase.from('profiles').upsert([{
       ...newStudent,
       login_email: newStudent.login_email.toLowerCase(),
       is_admin: false
     }], { onConflict: 'login_email' })
-
-    if (error) {
-      alert('追加に失敗しました: ' + error.message)
-    } else {
-      alert('道場生を追加しました')
-      setNewStudent({ name: '', login_email: '', branch: '池田', birthday: '', kyu: '無級' })
-      setShowAddForm(false)
-      loadStudents()
+    if (!error) {
+      alert('追加しました');
+      setNewStudent({ name: '', login_email: '', branch: '池田', birthday: '', kyu: '無級' });
+      setShowAddForm(false);
+      loadStudents();
     }
   }
 
@@ -60,56 +61,23 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   }
 
   const handleDeleteStudent = async (student: Profile) => {
-    if (!window.confirm(`【退会処理】\n${student.name} さんのデータを完全に削除しますか？`)) return
+    if (!window.confirm(`${student.name} を削除しますか？`)) return
     const { error } = await supabase.from('profiles').delete().eq('id', student.id)
-    if (!error) {
-      if (selectedStudent?.id === student.id) setSelectedStudent(null)
-      loadStudents()
-    }
+    if (!error) loadStudents()
   }
 
-  // --- 名簿CSVアップロード ---
   const handleProfileCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
-    setIsUploading(true)
     const reader = new FileReader()
     reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string
-        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
-        const updates = lines.slice(1).map(line => {
-          const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
-          if (!v[8]) return null
-          return { name: (v[1] || '') + (v[2] || ''), login_email: v[8].toLowerCase(), kyu: v[7] || '無級', branch: v[0] || '未設定', birthday: v[6] || '', is_admin: false }
-        }).filter(Boolean) as any[]
-        const { error } = await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
-        if (!error) { alert('✅ 名簿を更新しました'); loadStudents(); }
-      } catch (err: any) { alert(err.message) } finally { setIsUploading(false); e.target.value = '' }
-    }
-    reader.readAsText(file)
-  }
-
-  // --- 審査基準CSVアップロード ---
-  const handleCriteriaCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return
-    if (!window.confirm('審査基準データを一括登録しますか？')) return
-    setIsUploading(true)
-    const reader = new FileReader()
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string
-        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
-        const updates = lines.slice(1).map(line => {
-          const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
-          if (!v[0] || !v[2]) return null 
-          return { dan: v[0], examination_type: v[1] || '基本', examination_content: v[2], video_url: v[3] || '' }
-        }).filter(Boolean) as any[]
-        if (updates.length > 0) {
-          const { error } = await supabase.from('criteria').insert(updates)
-          if (error) throw error
-          alert(`✅ 審査項目を ${updates.length} 件登録しました。`)
-        }
-      } catch (err: any) { alert('❌ CSVエラー: ' + err.message) } finally { setIsUploading(false); e.target.value = '' }
+      const text = event.target?.result as string
+      const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
+      const updates = lines.slice(1).map(line => {
+        const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
+        return { name: (v[1] || '') + (v[2] || ''), login_email: v[8].toLowerCase(), kyu: v[7] || '無級', branch: v[0] || '未設定', birthday: v[6] || '', is_admin: false }
+      }).filter(u => u.login_email)
+      await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
+      loadStudents()
     }
     reader.readAsText(file)
   }
@@ -127,33 +95,46 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   }, [students, searchQuery, branchFilter])
 
   return (
-    <div className="flex h-screen bg-[#f0f2f5] overflow-hidden font-sans text-[#001f3f]">
+    <div className="flex h-screen bg-[#f0f2f5] overflow-hidden font-sans text-[#001f3f] relative">
+      
+      {/* モバイル用メニューボタン（サイドバーが閉じている時だけ右上に表示） */}
+      {!isSidebarOpen && (
+        <button 
+          onClick={() => setIsSidebarOpen(true)}
+          className="fixed top-4 left-4 z-50 bg-[#001f3f] text-white p-3 rounded-full shadow-2xl md:hidden"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+      )}
+
       {/* サイドバー */}
-      <div className="w-full md:w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl z-10">
+      <div className={`
+        fixed inset-y-0 left-0 z-40 w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl transition-transform duration-300 ease-in-out
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:relative md:translate-x-0
+      `}>
         <div className="p-6 bg-[#001f3f] text-white">
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-lg font-black italic tracking-tighter text-white uppercase">SEIKUKAI <span className="text-orange-400">ADMIN</span></h1>
-            <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase shadow-lg text-white">Logout</button>
+            <div className="flex gap-2">
+              {/* モバイル時は閉じるボタンを表示 */}
+              <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/50 hover:text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+              <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase text-white">Logout</button>
+            </div>
           </div>
           
           <div className="grid grid-cols-1 gap-2 mb-4">
-            <button 
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="w-full py-2 bg-green-600 hover:bg-green-700 rounded-xl text-[9px] font-black transition-all border border-green-500/20"
-            >
-              ＋ 個別追加
-            </button>
+            <button onClick={() => setShowAddForm(!showAddForm)} className="w-full py-2 bg-green-600 rounded-xl text-[9px] font-black border border-green-500/20">＋ 個別追加</button>
             <div className="grid grid-cols-2 gap-2">
-              <label className="block text-center py-2 bg-white/10 hover:bg-white/20 rounded-xl cursor-pointer text-[9px] font-black border border-white/10 transition-all">
-                👤 名簿CSV <input type="file" className="hidden" onChange={handleProfileCsvUpload} />
-              </label>
-              <label className="block text-center py-2 bg-orange-500/20 hover:bg-orange-500/40 rounded-xl cursor-pointer text-[9px] font-black border border-orange-500/20 transition-all text-orange-400">
-                📜 審査CSV <input type="file" className="hidden" onChange={handleCriteriaCsvUpload} />
-              </label>
+              <label className="block text-center py-2 bg-white/10 rounded-xl cursor-pointer text-[9px] font-black border border-white/10">👤 名簿CSV <input type="file" className="hidden" onChange={handleProfileCsvUpload} /></label>
+              <label className="block text-center py-2 bg-orange-500/20 rounded-xl cursor-pointer text-[9px] font-black border border-orange-500/20 text-orange-400">📜 審査CSV <input type="file" className="hidden" /></label>
             </div>
           </div>
 
-          {/* 個別追加フォーム */}
           {showAddForm && (
             <form onSubmit={handleAddStudent} className="mb-4 p-3 bg-white/5 rounded-xl border border-white/10 space-y-2">
               <input type="text" placeholder="氏名" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} />
@@ -164,11 +145,11 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
                   {['池田', '川西', '宝塚'].map(b => <option key={b} value={b} className="text-black">{b}</option>)}
                 </select>
               </div>
-              <button type="submit" className="w-full py-2 bg-orange-500 hover:bg-orange-600 rounded-lg text-[9px] font-black">保存する</button>
+              <button type="submit" className="w-full py-2 bg-orange-500 rounded-lg text-[9px] font-black">保存</button>
             </form>
           )}
 
-          <input type="text" placeholder="検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none focus:bg-white focus:text-[#001f3f] mb-2" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <input type="text" placeholder="検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none mb-2" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           <select className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-[10px] font-black outline-none" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
             <option value="すべて" className="text-black">すべての支部</option>
             {allBranchList.map(b => <option key={b} value={b} className="text-black">{b}支部</option>)}
@@ -179,11 +160,11 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           {filteredStudents.map(s => (
             <div key={s.id} className={`group w-full p-5 border-l-4 transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
               <div className="flex justify-between items-start">
-                <div className="flex-1 cursor-pointer" onClick={() => setSelectedStudent(s)}>
+                <div className="flex-1 cursor-pointer" onClick={() => handleSelectStudent(s)}>
                   <p className="font-black text-sm">{s.name}</p>
                   <p className="text-[9px] font-bold text-orange-500 mt-1 uppercase">{s.kyu}</p>
                 </div>
-                <button onClick={() => handleDeleteStudent(s)} className="text-gray-300 hover:text-red-500 transition-colors p-1">
+                <button onClick={() => handleDeleteStudent(s)} className="text-gray-300 hover:text-red-500 p-1">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 </button>
               </div>
@@ -197,13 +178,22 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-6 md:p-10">
+      {/* メインコンテンツ */}
+      <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-10 pt-16 md:pt-10">
         {selectedStudent ? (
           <EvaluationPanel key={selectedStudent.id} student={selectedStudent} isMaster={isMaster} onRefresh={() => { loadStudents(); setSelectedStudent(null); }} />
         ) : (
           <div className="h-full flex items-center justify-center text-gray-200 font-black text-xs italic tracking-widest uppercase">Select a student</div>
         )}
       </div>
+
+      {/* スマホ用オーバーレイ（サイドバーが開いている時に背景を暗くする） */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-30 md:hidden" 
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -256,11 +246,11 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
 
   return (
     <div className="max-w-2xl mx-auto pb-20">
-      <div className="bg-[#001f3f] rounded-[40px] p-8 text-white mb-6 shadow-xl relative border-b-8 border-orange-500">
-        <div className="flex justify-between items-start">
+      <div className="bg-[#001f3f] rounded-[30px] md:rounded-[40px] p-6 md:p-8 text-white mb-6 shadow-xl relative border-b-8 border-orange-500">
+        <div className="flex flex-col md:flex-row justify-between items-start gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <h2 className="text-3xl font-black">{student.name}</h2>
+              <h2 className="text-2xl md:text-3xl font-black">{student.name}</h2>
               <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${isGeneral ? 'bg-purple-600' : 'bg-orange-500'}`}>{isGeneral ? '一般部' : '少年部'}</span>
             </div>
             <div className="flex gap-4">
@@ -268,9 +258,9 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
               <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">現在の帯</p><p className="text-xl font-black">{targetBelt}</p></div>
             </div>
           </div>
-          <div className="text-right">
+          <div className="text-left md:text-right">
             <p className="text-[10px] font-black text-white/40 mb-1 uppercase">{viewBelt === '橙帯/紫帯' ? targetBelt : viewBelt} スコア</p>
-            <p className={`text-7xl font-black ${isScoreReady ? 'text-green-400' : 'text-white'}`}>{totalScore}</p>
+            <p className={`text-5xl md:text-7xl font-black ${isScoreReady ? 'text-green-400' : 'text-white'}`}>{totalScore}</p>
           </div>
         </div>
       </div>
@@ -278,7 +268,7 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
       {isMaster && (
         <div className={`bg-white p-6 rounded-[30px] shadow-lg border-2 mb-8 ${isScoreReady ? 'border-green-500' : 'border-gray-100'}`}>
           <h3 className="text-xs font-black text-[#001f3f] uppercase mb-4">🥋 昇級の実行</h3>
-          <select value={student.kyu || '無級'} onChange={(e) => handleKyuChange(e.target.value)} className="w-full bg-[#f0f2f5] rounded-xl px-4 py-4 text-base font-black outline-none">
+          <select value={student.kyu || '無級'} onChange={(e) => handleKyuChange(e.target.value)} className="w-full bg-[#f0f2f5] rounded-xl px-4 py-4 text-base font-black outline-none appearance-none">
             {allKyuList.map(k => <option key={k} value={k}>{k}</option>)}
           </select>
         </div>
@@ -295,10 +285,10 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
 
       <div className="space-y-4">
         {criteria.map(c => (
-          <div key={c.id} className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100">
-            <div className="flex justify-between items-center mb-4">
-              <span className="text-[9px] font-black text-gray-300 uppercase">{c.examination_type}</span>
-              <p className="text-sm font-bold text-[#001f3f] flex-1 px-4">{c.examination_content}</p>
+          <div key={c.id} className="bg-white p-4 md:p-6 rounded-[30px] shadow-sm border border-gray-100">
+            <div className="flex flex-col mb-4">
+              <span className="text-[9px] font-black text-gray-300 uppercase mb-1">{c.examination_type}</span>
+              <p className="text-sm font-bold text-[#001f3f]">{c.examination_content}</p>
             </div>
             <div className="grid grid-cols-4 gap-2">
               {['A', 'B', 'C', 'D'].map(g => (
