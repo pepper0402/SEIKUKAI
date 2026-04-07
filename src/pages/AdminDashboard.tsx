@@ -1,243 +1,246 @@
-import { useEffect, useState, useRef } from 'react'
-import { supabase, Profile, Criterion, Evaluation } from '../lib/supabase'
+import { useEffect, useState, useCallback, useMemo } from 'react'
+import { supabase, Profile } from '../lib/supabase'
 
-// 級の序列定義（昇級チェック用）
-const KYU_ORDER = ['無級', '10級', '9級', '8級', '7級', '6級', '5級', '4級', '3級', '2級', '1級', '初段'];
-
-const gradeToScore = (grade: string | null) => {
-  if (grade === 'A') return 2.5;
-  if (grade === 'B') return 1.5;
-  if (grade === 'C') return 0.5;
-  return 0;
-};
-
-export default function AdminDashboard() {
+export default function AdminDashboard({ profile: adminProfile }: { profile: Profile }) {
   const [students, setStudents] = useState<Profile[]>([])
-  const [criteria, setCriteria] = useState<Criterion[]>([])
-  const [evaluations, setEvaluations] = useState<Evaluation[]>([])
-  const [loading, setLoading] = useState(true)
   const [selectedStudent, setSelectedStudent] = useState<Profile | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [branchFilter, setBranchFilter] = useState('すべて')
+  const [isUploading, setIsUploading] = useState(false)
 
-  useEffect(() => {
-    loadData()
+  const isMaster = adminProfile?.login_email === 'mr.pepper0402@gmail.com'
+
+  const loadStudents = useCallback(async () => {
+    const { data } = await supabase.from('profiles').select('*').eq('is_admin', false).order('name')
+    setStudents(data || [])
   }, [])
 
-  async function loadData() {
-    setLoading(true)
-    const { data: p } = await supabase.from('profiles').select('*').eq('role', 'student').order('name')
-    const { data: c } = await supabase.from('criteria').select('*').order('id')
-    const { data: e } = await supabase.from('evaluations').select('*')
-    
-    if (p) setStudents(p)
-    if (c) setCriteria(c)
-    if (e) setEvaluations(e)
-    setLoading(false)
-  }
+  useEffect(() => { loadStudents() }, [loadStudents])
 
-  // 特定の生徒の合計スコアを計算
-  const calculateTotalScore = (studentId: string) => {
-    const studentEvals = evaluations.filter(e => e.student_id === studentId)
-    return studentEvals.reduce((acc, curr) => acc + gradeToScore(curr.grade), 0)
-  }
-
-  // 級の更新処理（80点未満はブロック）
-  const handleKyuChange = async (student: Profile, newKyu: string) => {
-    const currentScore = calculateTotalScore(student.id)
-    const currentIndex = KYU_ORDER.indexOf(student.kyu || '無級')
-    const newIndex = KYU_ORDER.indexOf(newKyu)
-
-    // 上の級に上げようとしている場合のみチェック
-    if (newIndex > currentIndex && currentScore < 80) {
-      alert(`昇級できません。\n${student.name} の現在のスコアは ${currentScore}点です。80点以上必要です。`)
-      return
-    }
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ kyu: newKyu })
-      .eq('id', student.id)
-
-    if (error) alert('更新エラー: ' + error.message)
-    else loadData()
-  }
-
-  // 評価の更新
-  const updateGrade = async (studentId: string, criterionId: number, grade: string) => {
-    const { error } = await supabase
-      .from('evaluations')
-      .upsert({ 
-        student_id: studentId, 
-        criterion_id: criterionId, 
-        grade 
-      }, { onConflict: 'student_id, criterion_id' })
-
-    if (error) alert(error.message)
-    else loadData()
-  }
-
-  // CSVインポート処理
-  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
+    setIsUploading(true)
     const reader = new FileReader()
     reader.onload = async (event) => {
       const text = event.target?.result as string
-      // 改行コードで分割し、空行を除去
-      const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
-      
-      const newStudents = []
-      // 1行目はヘッダーと仮定 (名前,ログインID,パスワード,級)
-      for (let i = 1; i < lines.length; i++) {
-        const [name, loginId, password, kyu] = lines[i].split(',').map(s => s?.trim())
-        if (!name || !loginId || !password) continue
-
-        // 1. Auth登録 (email形式にする必要があるため仮ドメイン付与)
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: `${loginId}@seikukai-temp.com`,
-          password: password,
-        })
-
-        if (authError) {
-          console.error(`登録失敗: ${name}`, authError.message)
-          continue
+      const lines = text.split('\n').filter(line => line.trim() !== '')
+      const updates = lines.slice(1).map(line => {
+        const v = line.split(',').map(s => s.trim())
+        if (!v[8]) return null
+        return { 
+          name: (v[1] || '') + (v[2] || ''), 
+          login_email: v[8], 
+          kyu: v[7] || '無級', 
+          branch: v[10] || '未設定', 
+          is_admin: v[8] === 'mr.pepper0402@gmail.com'
         }
-
-        // 2. Profile作成
-        if (authData.user) {
-          await supabase.from('profiles').insert({
-            id: authData.user.id,
-            name: name,
-            kyu: kyu || '無級',
-            role: 'student'
-          })
-        }
+      }).filter(Boolean) as any[]
+      if (updates.length > 0) {
+        await supabase.from('profiles').upsert(updates, { onConflict: 'login_email' })
+        loadStudents()
       }
-      alert('インポート処理が完了しました')
-      loadData()
+      setIsUploading(false)
     }
-    // Shift-JIS (Excel作成CSV) に対応させる場合は 'Shift_JIS' を指定
-    reader.readAsText(file, 'UTF-8')
+    reader.readAsText(file)
   }
 
-  if (loading) return <div className="p-10 text-center font-bold text-gray-400">管理データ読み込み中...</div>
+  const dynamicBranches = useMemo(() => {
+    const branches = students.map(s => (s as any).branch).filter(Boolean)
+    return ['すべて', ...Array.from(new Set(branches))]
+  }, [students])
+
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+      const k = (s.name || '') + (s.kyu || '') + ((s as any).branch || '')
+      return k.toLowerCase().includes(searchQuery.toLowerCase()) && (branchFilter === 'すべて' || (s as any).branch === branchFilter)
+    })
+  }, [students, searchQuery, branchFilter])
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-8 text-[#001f3f]">
-      <div className="max-w-6xl mx-auto">
-        <header className="flex justify-between items-center mb-8 bg-white p-6 rounded-[30px] shadow-sm">
-          <div>
-            <h1 className="text-2xl font-black italic tracking-tighter">ADMIN DASHBOARD</h1>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">誠空会 管理システム</p>
+    <div className="flex h-screen bg-[#f0f2f5] overflow-hidden font-sans text-[#001f3f]">
+      {/* サイドバー */}
+      <div className="w-full md:w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl z-10">
+        <div className="p-6 bg-[#001f3f] text-white">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-lg font-black italic">SEIKUKAI <span className="text-orange-400">ADMIN</span></h1>
+            <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase shadow-lg hover:bg-red-700 transition-all">Logout</button>
           </div>
-          <div className="flex gap-4">
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleCSVUpload} 
-              className="hidden" 
-              accept=".csv"
-            />
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="bg-[#001f3f] text-white px-5 py-2 rounded-xl text-xs font-bold hover:bg-opacity-90 transition-all shadow-lg shadow-blue-900/20"
-            >
-              CSV生徒一括登録
-            </button>
-            <button onClick={() => supabase.auth.signOut()} className="text-xs font-bold text-gray-400 hover:text-red-500">ログアウト</button>
-          </div>
-        </header>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* 生徒一覧 */}
-          <div className="lg:col-span-1 space-y-4">
-            <h2 className="px-2 text-[11px] font-black text-gray-400 uppercase tracking-widest italic">Student List</h2>
-            {students.map(student => {
-              const score = calculateTotalScore(student.id)
-              return (
-                <div 
-                  key={student.id}
-                  onClick={() => setSelectedStudent(student)}
-                  className={`p-5 rounded-[28px] cursor-pointer transition-all border-2 ${
-                    selectedStudent?.id === student.id 
-                    ? 'bg-white border-[#001f3f] shadow-xl translate-x-2' 
-                    : 'bg-white/50 border-transparent hover:bg-white'
-                  }`}
-                >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-lg font-black tracking-tighter">{student.name}</p>
-                      <select 
-                        value={student.kyu || '無級'}
-                        onChange={(e) => handleKyuChange(student, e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-1 text-[10px] font-bold bg-gray-100 rounded-md px-2 py-0.5 border-none"
-                      >
-                        {KYU_ORDER.map(k => <option key={k} value={k}>{k}</option>)}
-                      </select>
-                    </div>
-                    <div className="text-right">
-                      <p className={`text-2xl font-black ${score >= 80 ? 'text-green-500' : 'text-[#001f3f]'}`}>{score}</p>
-                      <p className="text-[8px] font-bold text-gray-300 uppercase">Points</p>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* 評価入力エリア */}
-          <div className="lg:col-span-2">
-            {selectedStudent ? (
-              <div className="bg-white rounded-[40px] p-8 shadow-sm border border-gray-100">
-                <div className="flex justify-between items-center mb-8">
-                  <div>
-                    <span className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em]">Evaluating</span>
-                    <h2 className="text-3xl font-black tracking-tighter">{selectedStudent.name}</h2>
-                  </div>
-                  <div className={`px-4 py-1.5 rounded-full text-[11px] font-black ${calculateTotalScore(selectedStudent.id) >= 80 ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
-                    {calculateTotalScore(selectedStudent.id) >= 80 ? '昇級要件クリア' : 'スコア不足'}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  {criteria
-                    .filter(c => c.dan === (selectedStudent.kyu || '無級').replace(/[0-9]|級/g, '') || true) // 簡易フィルタ
-                    .map(c => (
-                      <div key={c.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl hover:bg-gray-100 transition-colors group">
-                        <div className="flex-1 pr-4">
-                          <p className="text-[9px] font-black text-gray-400 uppercase leading-none mb-1">{c.examination_type}</p>
-                          <p className="text-sm font-bold text-[#001f3f] leading-tight">{c.examination_content}</p>
-                        </div>
-                        <div className="flex gap-1">
-                          {['A', 'B', 'C', 'D'].map(g => (
-                            <button
-                              key={g}
-                              onClick={() => updateGrade(selectedStudent.id, c.id, g)}
-                              className={`w-9 h-9 rounded-xl font-black text-xs transition-all ${
-                                evaluations.find(e => e.student_id === selectedStudent.id && e.criterion_id === c.id)?.grade === g
-                                ? 'bg-[#001f3f] text-white scale-110 shadow-md'
-                                : 'bg-white text-gray-300 hover:text-[#001f3f] border border-gray-100'
-                              }`}
-                            >
-                              {g}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            ) : (
-              <div className="h-full min-h-[400px] bg-white/50 rounded-[40px] border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-300">
-                <span className="text-4xl mb-4">🥋</span>
-                <p className="font-bold">生徒を選択してください</p>
-              </div>
-            )}
+          <div className="space-y-3">
+            <label className="block w-full text-center bg-white/10 hover:bg-white/20 py-2 rounded-xl cursor-pointer text-[10px] font-black border border-white/10 transition-all">
+              CSV名簿を読込 <input type="file" className="hidden" onChange={handleCsvUpload} />
+            </label>
+            <input type="text" placeholder="名前・級・支部で検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            <select className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-[10px] font-black outline-none focus:bg-white focus:text-[#001f3f]" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+              {dynamicBranches.map(b => <option key={b} value={b} className="text-black">{b === 'すべて' ? 'すべての支部' : `${b}支部`}</option>)}
+            </select>
           </div>
         </div>
+        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+          {filteredStudents.map(s => (
+            <button key={s.id} onClick={() => setSelectedStudent(s)} className={`w-full p-5 text-left border-l-4 transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500' : 'border-transparent hover:bg-gray-50'}`}>
+              <p className="font-black text-sm">{s.name}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{(s as any).branch || '未設定'}</span>
+                <span className="text-[9px] font-bold text-orange-500 uppercase">{s.kyu || '無級'}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* メイン詳細エリア */}
+      <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-6 md:p-10">
+        {selectedStudent ? (
+          <EvaluationPanel 
+            key={selectedStudent.id} 
+            student={selectedStudent} 
+            isMaster={isMaster} 
+            onRefresh={() => { loadStudents(); setSelectedStudent(null); }}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center text-gray-200 font-black text-[10px] tracking-widest uppercase">Select Student</div>
+        )}
       </div>
     </div>
   )
+}
+
+function EvaluationPanel({ student, isMaster, onRefresh }: any) {
+  const [viewBelt, setViewBelt] = useState(getTargetBelt(student?.kyu || '無級'))
+  const [criteria, setCriteria] = useState<any[]>([])
+  const [isUpdating, setIsUpdating] = useState(false)
+  
+  const belts = ['白帯', '黄帯', '青帯', '橙帯', '緑帯', '茶帯', '黒帯']
+  const allKyuList = [
+    '無級', '10級', '準9級', '9級', '準8級', '8級', '準7級', '7級', '準6級', '6級', 
+    '準5級', '5級', '準4級', '4級', '準3級', '3級', '準2級', '2級', '準1級', '1級', 
+    '初段', '弍段', '参段', '四段', '五段'
+  ]
+
+  useEffect(() => {
+    async function fetchEvals() {
+      if (!student?.id) return
+      const { data: crit } = await supabase.from('criteria').select('*').eq('dan', viewBelt).order('id')
+      const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
+      setCriteria((crit || []).map(c => ({ ...c, grade: evals?.find(e => e.criterion_id === c.id)?.grade || null })))
+    }
+    fetchEvals()
+  }, [student?.id, viewBelt])
+
+  const saveGrade = async (cid: number, grade: string | null) => {
+    setCriteria(prev => prev.map(c => c.id === cid ? { ...c, grade } : c))
+    if (!grade) {
+      await supabase.from('evaluations').delete().match({ student_id: student.id, criterion_id: cid })
+    } else {
+      await supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: cid, grade }, { onConflict: 'student_id,criterion_id' })
+    }
+  }
+
+  const handleKyuChange = async (newKyu: string) => {
+    if (!newKyu || newKyu === student.kyu) return
+
+    // 級の強さを数値化して比較 (インデックスが大きいほど強い)
+    const currentIndex = allKyuList.indexOf(student.kyu || '無級')
+    const newIndex = allKyuList.indexOf(newKyu)
+
+    let confirmMsg = `${student.name} 君を 【${newKyu}】 に変更しますか？`
+    
+    // 下方修正（降段）の場合の特別警告
+    if (newIndex < currentIndex) {
+      confirmMsg = `⚠️ 重要：現在の級（${student.kyu}）より下の級（${newKyu}）へ戻そうとしています。\n本当に実行してもよろしいですか？`
+    }
+
+    if (!window.confirm(confirmMsg)) return
+    
+    setIsUpdating(true)
+    const { error } = await supabase.from('profiles').update({ kyu: newKyu }).eq('id', student.id)
+    if (!error) {
+      alert('級を更新しました。')
+      onRefresh()
+    }
+    setIsUpdating(false)
+  }
+
+  const totalScore = criteria.reduce((acc, curr) => acc + (curr.grade === 'A' ? 2.5 : curr.grade === 'B' ? 1.5 : curr.grade === 'C' ? 0.5 : 0), 0)
+
+  return (
+    <div className="max-w-2xl mx-auto pb-20">
+      {/* ユーザーヘッダー */}
+      <div className="bg-[#001f3f] rounded-[40px] p-8 text-white mb-6 shadow-xl relative overflow-hidden">
+        <div className="relative z-10 flex justify-between items-end">
+          <div>
+            <h2 className="text-3xl font-black mb-2">{student?.name}</h2>
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="bg-orange-500 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter">Current: {student?.kyu || '無級'}</span>
+              <select value={viewBelt} onChange={(e) => setViewBelt(e.target.value)} className="bg-white/20 border border-white/20 rounded-lg px-2 py-1 text-[10px] font-black text-white outline-none">
+                {belts.map(b => <option key={b} value={b} className="text-black">{b}の評価を表示</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1">{viewBelt} SCORE</p>
+            <p className="text-6xl font-black tabular-nums">{totalScore}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 級の変更・確定（降段対応） */}
+      {isMaster && (
+        <div className="bg-white p-6 rounded-[30px] shadow-lg border-2 border-orange-500 mb-8">
+          <h3 className="text-xs font-black mb-4 text-[#001f3f] flex items-center gap-2">
+            ⚙️ 級・段位の管理
+            <span className="text-[9px] text-gray-400 font-normal">（下の級へ戻すことも可能です）</span>
+          </h3>
+          <select 
+            disabled={isUpdating}
+            value={student.kyu || '無級'}
+            onChange={(e) => handleKyuChange(e.target.value)}
+            className="w-full bg-[#f0f2f5] border-none rounded-xl px-4 py-3 text-sm font-black text-[#001f3f] outline-none appearance-none cursor-pointer hover:bg-gray-200 transition-colors"
+          >
+            {allKyuList.map(k => (
+              <option key={k} value={k}>{k === student.kyu ? `★ ${k} (現在の設定)` : k}</option>
+            ))}
+          </select>
+          <p className="mt-3 text-[9px] text-red-400 font-bold leading-relaxed">
+            ※ 級を下げて確定する場合のみ、確認の警告が表示されます。
+          </p>
+        </div>
+      )}
+
+      {/* 評価リスト */}
+      <div className="space-y-4">
+        {criteria.map(c => (
+          <div key={c.id} className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100">
+            <div className="flex justify-between items-start mb-4">
+              <p className="text-sm font-bold text-[#001f3f] leading-relaxed">{c.examination_content}</p>
+              {c.grade && <button onClick={() => saveGrade(c.id, null)} className="text-[10px] text-gray-300 font-bold hover:text-red-500 transition-colors">✕ RESET</button>}
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {['A', 'B', 'C', 'D'].map(g => (
+                <button 
+                  key={g} 
+                  onClick={() => saveGrade(c.id, g)} 
+                  className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-200 hover:bg-gray-100'}`}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function getTargetBelt(kyu: string) {
+  const k = kyu || '無級'
+  if (k === '無級') return '白帯'
+  if (k.match(/10|9/)) return '黄帯'
+  if (k.match(/8|7/)) return '青帯'
+  if (k.match(/6|5/)) return '橙帯'
+  if (k.match(/4|3/)) return '緑帯'
+  if (k.includes('1') || k.includes('2')) return '茶帯'
+  return '黒帯'
 }
