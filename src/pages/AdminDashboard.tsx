@@ -70,7 +70,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
             <label className="block w-full text-center bg-white/10 hover:bg-white/20 py-2 rounded-xl cursor-pointer text-[10px] font-black border border-white/10 transition-all">
               CSV名簿を読込 <input type="file" className="hidden" onChange={handleCsvUpload} />
             </label>
-            <input type="text" placeholder="検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            <input type="text" placeholder="名前・級・支部で検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             <select className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-[10px] font-black outline-none focus:bg-white focus:text-[#001f3f]" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
               {dynamicBranches.map(b => <option key={b} value={b} className="text-black">{b === 'すべて' ? 'すべての支部' : `${b}支部`}</option>)}
             </select>
@@ -109,8 +109,14 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 function EvaluationPanel({ student, isMaster, onRefresh }: any) {
   const [viewBelt, setViewBelt] = useState(getTargetBelt(student?.kyu || '無級'))
   const [criteria, setCriteria] = useState<any[]>([])
-  const [isUpdatingKyu, setIsUpdatingKyu] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
+  
   const belts = ['白帯', '黄帯', '青帯', '橙帯', '緑帯', '茶帯', '黒帯']
+  const allKyuList = [
+    '無級', '10級', '準9級', '9級', '準8級', '8級', '準7級', '7級', '準6級', '6級', 
+    '準5級', '5級', '準4級', '4級', '準3級', '3級', '準2級', '2級', '準1級', '1級', 
+    '初段', '弍段', '参段', '四段', '五段'
+  ]
 
   useEffect(() => {
     async function fetchEvals() {
@@ -131,75 +137,92 @@ function EvaluationPanel({ student, isMaster, onRefresh }: any) {
     }
   }
 
-  const handleKyuUpdate = async (newKyu: string) => {
-    if (!newKyu) return
-    if (!window.confirm(`${student.name} 君の級を 【${newKyu}】 に変更して確定しますか？`)) return
+  const handleKyuChange = async (newKyu: string) => {
+    if (!newKyu || newKyu === student.kyu) return
+
+    // 級の強さを数値化して比較 (インデックスが大きいほど強い)
+    const currentIndex = allKyuList.indexOf(student.kyu || '無級')
+    const newIndex = allKyuList.indexOf(newKyu)
+
+    let confirmMsg = `${student.name} 君を 【${newKyu}】 に変更しますか？`
     
-    setIsUpdatingKyu(true)
+    // 下方修正（降段）の場合の特別警告
+    if (newIndex < currentIndex) {
+      confirmMsg = `⚠️ 重要：現在の級（${student.kyu}）より下の級（${newKyu}）へ戻そうとしています。\n本当に実行してもよろしいですか？`
+    }
+
+    if (!window.confirm(confirmMsg)) return
+    
+    setIsUpdating(true)
     const { error } = await supabase.from('profiles').update({ kyu: newKyu }).eq('id', student.id)
     if (!error) {
       alert('級を更新しました。')
       onRefresh()
     }
-    setIsUpdatingKyu(false)
+    setIsUpdating(false)
   }
 
   const totalScore = criteria.reduce((acc, curr) => acc + (curr.grade === 'A' ? 2.5 : curr.grade === 'B' ? 1.5 : curr.grade === 'C' ? 0.5 : 0), 0)
-  const nextKyuOptions = getSelectableKyu(student?.kyu || '無級')
 
   return (
     <div className="max-w-2xl mx-auto pb-20">
-      {/* ステータスカード */}
+      {/* ユーザーヘッダー */}
       <div className="bg-[#001f3f] rounded-[40px] p-8 text-white mb-6 shadow-xl relative overflow-hidden">
         <div className="relative z-10 flex justify-between items-end">
           <div>
             <h2 className="text-3xl font-black mb-2">{student?.name}</h2>
             <div className="flex flex-wrap gap-2 items-center">
-              <span className="bg-orange-500 px-3 py-1 rounded-full text-[10px] font-black">現在の級: {student?.kyu || '無級'}</span>
-              <select value={viewBelt} onChange={(e) => setViewBelt(e.target.value)} className="bg-white/20 border border-white/20 rounded-lg px-2 py-1 text-[10px] font-black outline-none text-white">
-                {belts.map(b => <option key={b} value={b} className="text-black">{b}の項目</option>)}
+              <span className="bg-orange-500 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter">Current: {student?.kyu || '無級'}</span>
+              <select value={viewBelt} onChange={(e) => setViewBelt(e.target.value)} className="bg-white/20 border border-white/20 rounded-lg px-2 py-1 text-[10px] font-black text-white outline-none">
+                {belts.map(b => <option key={b} value={b} className="text-black">{b}の評価を表示</option>)}
               </select>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1">{viewBelt} 合計</p>
+            <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1">{viewBelt} SCORE</p>
             <p className="text-6xl font-black tabular-nums">{totalScore}</p>
           </div>
         </div>
       </div>
 
-      {/* 昇級確定セクション (マスターのみ) */}
+      {/* 級の変更・確定（降段対応） */}
       {isMaster && (
-        <div className="bg-white p-6 rounded-[30px] shadow-lg border-2 border-orange-500 mb-8 animate-pulse-slow">
+        <div className="bg-white p-6 rounded-[30px] shadow-lg border-2 border-orange-500 mb-8">
           <h3 className="text-xs font-black mb-4 text-[#001f3f] flex items-center gap-2">
-            🏆 昇級の確定
-            {totalScore >= 80 && <span className="text-green-500 text-[10px]">● 合格圏内</span>}
+            ⚙️ 級・段位の管理
+            <span className="text-[9px] text-gray-400 font-normal">（下の級へ戻すことも可能です）</span>
           </h3>
-          <div className="flex gap-3">
-            <select 
-              disabled={isUpdatingKyu}
-              onChange={(e) => handleKyuUpdate(e.target.value)}
-              className="flex-1 bg-[#f0f2f5] border-none rounded-xl px-4 py-3 text-sm font-black text-[#001f3f] outline-none"
-            >
-              <option value="">新しい級を選択...</option>
-              {nextKyuOptions.map(k => <option key={k} value={k}>{k}</option>)}
-            </select>
-          </div>
-          <p className="mt-3 text-[9px] text-gray-400 font-bold italic">※ 級を確定すると名簿に反映され、一覧に戻ります。</p>
+          <select 
+            disabled={isUpdating}
+            value={student.kyu || '無級'}
+            onChange={(e) => handleKyuChange(e.target.value)}
+            className="w-full bg-[#f0f2f5] border-none rounded-xl px-4 py-3 text-sm font-black text-[#001f3f] outline-none appearance-none cursor-pointer hover:bg-gray-200 transition-colors"
+          >
+            {allKyuList.map(k => (
+              <option key={k} value={k}>{k === student.kyu ? `★ ${k} (現在の設定)` : k}</option>
+            ))}
+          </select>
+          <p className="mt-3 text-[9px] text-red-400 font-bold leading-relaxed">
+            ※ 級を下げて確定する場合のみ、確認の警告が表示されます。
+          </p>
         </div>
       )}
 
-      {/* 評価項目リスト */}
+      {/* 評価リスト */}
       <div className="space-y-4">
         {criteria.map(c => (
           <div key={c.id} className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100">
             <div className="flex justify-between items-start mb-4">
               <p className="text-sm font-bold text-[#001f3f] leading-relaxed">{c.examination_content}</p>
-              {c.grade && <button onClick={() => saveGrade(c.id, null)} className="text-[10px] text-gray-300 font-bold hover:text-red-500">✕</button>}
+              {c.grade && <button onClick={() => saveGrade(c.id, null)} className="text-[10px] text-gray-300 font-bold hover:text-red-500 transition-colors">✕ RESET</button>}
             </div>
             <div className="grid grid-cols-4 gap-2">
               {['A', 'B', 'C', 'D'].map(g => (
-                <button key={g} onClick={() => saveGrade(c.id, g)} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-md scale-105' : 'bg-gray-50 text-gray-200'}`}>
+                <button 
+                  key={g} 
+                  onClick={() => saveGrade(c.id, g)} 
+                  className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-200 hover:bg-gray-100'}`}
+                >
                   {g}
                 </button>
               ))}
@@ -220,20 +243,4 @@ function getTargetBelt(kyu: string) {
   if (k.match(/4|3/)) return '緑帯'
   if (k.includes('1') || k.includes('2')) return '茶帯'
   return '黒帯'
-}
-
-function getSelectableKyu(currentKyu: string) {
-  // 現在の級に基づいた昇級の選択肢を生成
-  if (currentKyu === '無級') return ['準10級', '10級']
-  if (currentKyu.includes('10')) return ['準9級', '9級']
-  if (currentKyu.includes('9')) return ['準8級', '8級']
-  if (currentKyu.includes('8')) return ['準7級', '7級']
-  if (currentKyu.includes('7')) return ['準6級', '6級']
-  if (currentKyu.includes('6')) return ['準5級', '5級']
-  if (currentKyu.includes('5')) return ['準4級', '4級']
-  if (currentKyu.includes('4')) return ['準3級', '3級']
-  if (currentKyu.includes('3')) return ['準2級', '2級']
-  if (currentKyu.includes('2')) return ['準1級', '1級']
-  if (currentKyu.includes('1')) return ['初段']
-  return ['弍段', '参段', '四段']
 }
