@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react'
 import { supabase, Profile } from '../lib/supabase'
 
 const getBeltTheme = (kyu: string) => {
-  if (!kyu || kyu === '無級') return { name: '白帯', bg: 'bg-white', text: 'text-gray-900', border: 'border-gray-200' };
-  if (kyu.includes('10級') || kyu.includes('9級')) return { name: '黄帯', bg: 'bg-yellow-400', text: 'text-yellow-900', border: 'border-yellow-500' };
-  if (kyu.includes('8級') || kyu.includes('7級')) return { name: '青帯', bg: 'bg-blue-600', text: 'text-white', border: 'border-blue-700' };
-  if (kyu.includes('6級') || kyu.includes('5級')) return { name: '橙・紫帯', bg: 'bg-orange-500', text: 'text-white', border: 'border-orange-600' };
-  if (kyu.includes('4級') || kyu.includes('3級')) return { name: '緑帯', bg: 'bg-green-600', text: 'text-white', border: 'border-green-700' };
-  if (kyu.includes('2級') || kyu.includes('1級')) return { name: '茶帯', bg: 'bg-amber-900', text: 'text-white', border: 'border-amber-950' };
-  if (kyu.includes('段')) return { name: '黒帯', bg: 'bg-gray-900', text: 'text-white', border: 'border-black' };
-  return { name: '白帯', bg: 'bg-white', text: 'text-gray-900', border: 'border-gray-200' };
+  if (!kyu || kyu === '無級') return { name: '白帯', bg: 'bg-white', text: 'text-gray-900', badge: 'bg-gray-100 text-gray-500' };
+  if (kyu.includes('10級') || kyu.includes('9級')) return { name: '黄帯', bg: 'bg-yellow-400', text: 'text-yellow-900', badge: 'bg-yellow-500 text-white' };
+  if (kyu.includes('8級') || kyu.includes('7級')) return { name: '青帯', bg: 'bg-blue-600', text: 'text-white', badge: 'bg-blue-800 text-white' };
+  if (kyu.includes('6級') || kyu.includes('5級')) return { name: '橙・紫帯', bg: 'bg-orange-500', text: 'text-white', badge: 'bg-orange-700 text-white' };
+  if (kyu.includes('4級') || kyu.includes('3級')) return { name: '緑帯', bg: 'bg-green-600', text: 'text-white', badge: 'bg-green-800 text-white' };
+  if (kyu.includes('2級') || kyu.includes('1級')) return { name: '茶帯', bg: 'bg-amber-900', text: 'text-white', badge: 'bg-amber-950 text-white' };
+  if (kyu.includes('段')) return { name: '黒帯', bg: 'bg-gray-900', text: 'text-white', badge: 'bg-black text-white' };
+  return { name: '白帯', bg: 'bg-white', text: 'text-gray-900', badge: 'bg-gray-100 text-gray-400' };
 }
 
 const gradeToScore = (grade: string | null) => {
@@ -63,46 +63,45 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
   const totalScore = currentCriteria.reduce((acc, curr) => acc + gradeToScore(curr.grade), 0);
   const isEligible = totalScore >= 80;
 
-  if (loading) return <div className="flex justify-center py-20 animate-pulse text-gray-300 font-black tracking-[0.2em]">LOADING...</div>
+  if (loading) return <div className="flex justify-center py-20 animate-pulse text-gray-300 font-black tracking-widest">LOADING...</div>
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] pb-12 text-[#001f3f]">
       {/* 帯色メインヘッダー */}
-      <div className={`${theme.bg} ${theme.text} px-6 pt-12 pb-20 rounded-b-[60px] shadow-2xl relative overflow-hidden transition-all duration-700`}>
-        <div className="absolute top-0 right-0 opacity-[0.07] text-[12rem] font-black italic -mr-16 -mt-10 pointer-events-none select-none">
+      <div className={`${theme.bg} ${theme.text} px-6 pt-12 pb-24 rounded-b-[60px] shadow-2xl relative overflow-hidden transition-all duration-700`}>
+        {/* 背景の大きな文字装飾 */}
+        <div className="absolute top-0 right-0 opacity-[0.08] text-[14rem] font-black italic -mr-20 -mt-16 pointer-events-none select-none">
           {theme.name.slice(0,1)}
         </div>
         
         <div className="relative z-10 max-w-md mx-auto">
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
-              <p className="text-[10px] font-black uppercase tracking-[0.4em] opacity-60 mb-2">Seikukai Portal</p>
-              <h1 className="text-4xl font-black tracking-tighter mb-4 leading-none">{profile.name}</h1>
-              <div className="inline-flex items-center bg-black/10 px-4 py-1.5 rounded-full border border-white/10 backdrop-blur-md">
-                <span className="text-[11px] font-black uppercase tracking-wider">{profile.kyu || '無級'} 保持</span>
+          <div className="flex justify-between items-center">
+            <div className="flex flex-col gap-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.4em] opacity-60">Seikukai Portal</p>
+              <div className="flex items-center gap-4">
+                <h1 className="text-4xl font-black tracking-tighter leading-none">{profile.name}</h1>
+                {/* 現在の級を大きく表示するバッジ */}
+                <div className={`${theme.badge} px-4 py-2 rounded-2xl shadow-lg flex flex-col items-center justify-center min-w-[70px] border border-white/20 backdrop-blur-sm transition-transform active:scale-95`}>
+                  <span className="text-[9px] font-black uppercase leading-none mb-1 opacity-80">{theme.name}</span>
+                  <span className="text-xl font-black leading-none tracking-tighter">{profile.kyu || '無級'}</span>
+                </div>
               </div>
             </div>
             {/* 設定・ログアウト */}
-            <div className="flex gap-4">
-              <button onClick={handlePasswordChange} className="flex flex-col items-center gap-1.5 group">
-                <div className="w-11 h-11 bg-black/5 rounded-2xl flex items-center justify-center text-xl shadow-inner group-hover:bg-black/10 transition-all">⚙️</div>
-                <span className="text-[8px] font-black uppercase opacity-60">設定</span>
-              </button>
-              <button onClick={() => supabase.auth.signOut()} className="flex flex-col items-center gap-1.5 group">
-                <div className="w-11 h-11 bg-black/5 rounded-2xl flex items-center justify-center text-xl shadow-inner group-hover:bg-red-500/20 transition-all">🚪</div>
-                <span className="text-[8px] font-black uppercase opacity-60">ログアウト</span>
-              </button>
+            <div className="flex gap-3">
+              <button onClick={handlePasswordChange} className="w-12 h-12 bg-black/5 rounded-2xl flex items-center justify-center text-xl shadow-inner hover:bg-black/10 transition-all">⚙️</button>
+              <button onClick={() => supabase.auth.signOut()} className="w-12 h-12 bg-black/5 rounded-2xl flex items-center justify-center text-xl shadow-inner hover:bg-red-500/20 transition-all">🚪</button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="px-5 -mt-12 relative z-20 max-w-md mx-auto">
-        {/* スコア・プログレスカード */}
+      <div className="px-5 -mt-14 relative z-20 max-w-md mx-auto">
+        {/* スコアカード */}
         <div className="bg-white rounded-[40px] p-8 shadow-2xl shadow-gray-200/50 border border-white mb-10">
           <div className="flex justify-between items-end mb-8">
             <div>
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Total Score</p>
+              <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-2 italic">Current Score</p>
               <div className="flex items-baseline">
                 <span className="text-6xl font-black tracking-tighter text-[#001f3f]">{totalScore}</span>
                 <span className="text-lg font-black opacity-10 ml-2">/ 100</span>
@@ -114,37 +113,35 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
               </div>
             ) : (
               <div className="text-right pb-1">
-                <p className="text-[11px] font-black text-orange-500 mb-0.5 tracking-tighter">合格まであと {80 - totalScore}点</p>
-                <div className="w-16 h-1 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-orange-500" style={{ width: `${(totalScore/80)*100}%` }}></div>
+                <p className="text-[11px] font-black text-orange-500 mb-0.5 tracking-tighter italic">あと {80 - totalScore}点</p>
+                <div className="w-16 h-1.5 bg-gray-50 rounded-full overflow-hidden">
+                  <div className="h-full bg-orange-500 rounded-full" style={{ width: `${(totalScore/80)*100}%` }}></div>
                 </div>
               </div>
             )}
           </div>
-          {/* プログレスバー（合格ライン視覚化） */}
-          <div className="relative h-3 bg-gray-50 rounded-full overflow-hidden shadow-inner">
+          {/* プログレスバー */}
+          <div className="relative h-4 bg-gray-50 rounded-full overflow-hidden shadow-inner p-1">
             <div 
-              className={`h-full rounded-full transition-all duration-1000 ease-out ${isEligible ? 'bg-green-500' : 'bg-[#001f3f]'}`}
+              className={`h-full rounded-full transition-all duration-1000 ease-out shadow-sm ${isEligible ? 'bg-green-500' : 'bg-[#001f3f]'}`}
               style={{ width: `${Math.min((totalScore / 100) * 100, 100)}%` }}
             ></div>
-            {/* 80点の目印 */}
-            <div className="absolute left-[80%] top-0 w-0.5 h-full bg-white/50"></div>
+            <div className="absolute left-[80%] top-0 w-0.5 h-full bg-white/40"></div>
           </div>
         </div>
 
-        {/* 審査項目セクション */}
+        {/* 審査項目 */}
         <div className="flex items-center justify-between px-2 mb-6">
-          <h2 className="font-black text-[11px] text-gray-400 uppercase tracking-[0.3em] italic">
-            {theme.name} Examination
+          <h2 className="font-black text-[11px] text-gray-400 uppercase tracking-[0.3em] italic opacity-80">
+            Examination List
           </h2>
-          <span className="text-[9px] font-bold text-gray-300">{currentCriteria.length} Items</span>
         </div>
         
         <div className="space-y-4">
           {currentCriteria.map((c) => (
-            <div key={c.id} className="bg-white rounded-[32px] p-6 flex items-center gap-5 shadow-sm border border-gray-50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 group">
+            <div key={c.id} className="bg-white rounded-[32px] p-5 flex items-center gap-5 shadow-sm border border-gray-50 hover:shadow-xl transition-all duration-300 group">
               {/* 評価 A-D */}
-              <div className={`shrink-0 w-16 h-16 rounded-[24px] flex items-center justify-center font-black text-2xl border-2 transition-all ${
+              <div className={`shrink-0 w-16 h-16 rounded-[22px] flex items-center justify-center font-black text-2xl border-2 transition-all ${
                 c.grade === 'A' ? 'bg-orange-50 border-orange-500 text-orange-600 shadow-lg shadow-orange-100' : 
                 c.grade === 'B' ? 'bg-slate-50 border-slate-800 text-slate-800' :
                 c.grade ? 'bg-gray-50 border-gray-100 text-gray-300' : 
@@ -155,11 +152,11 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
 
               {/* 内容 */}
               <div className="flex-1 min-w-0">
-                <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest mb-1.5 leading-none">{c.examination_type || '基本項目'}</p>
-                <p className="text-[15px] font-bold text-[#001f3f] leading-[1.4] break-words transition-colors">{c.examination_content}</p>
+                <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest mb-1 leading-none">{c.examination_type || '審査'}</p>
+                <p className="text-[15px] font-bold text-[#001f3f] leading-[1.3] break-words">{c.examination_content}</p>
               </div>
 
-              {/* 動画リンク（あるものだけ表示） */}
+              {/* 動画リンク */}
               {c.video_url && (
                 <a 
                   href={c.video_url} 
