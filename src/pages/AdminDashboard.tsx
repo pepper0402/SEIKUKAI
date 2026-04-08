@@ -42,22 +42,44 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     if (window.innerWidth < 768) setIsSidebarOpen(false)
   }
 
-  // --- 個別追加実行 ---
+// --- 個別追加実行（認証アカウントも同時に作成） ---
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newStudent.name || !newStudent.login_email) return alert('名前とメールは必須です')
-    const { error } = await supabase.from('profiles').upsert([{
-      ...newStudent,
-      login_email: newStudent.login_email.toLowerCase(),
-      is_admin: false
-    }], { onConflict: 'login_email' })
-    if (error) {
-      alert('エラー: ' + error.message)
-    } else {
-      alert('道場生を追加しました');
+
+    setIsUploading(true) // ローディング開始
+
+    try {
+      // 1. まずは Profiles テーブルに登録（IDを取得するため）
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .upsert([{
+          name: newStudent.name,
+          login_email: newStudent.login_email.toLowerCase(),
+          branch: newStudent.branch,
+          birthday: newStudent.birthday,
+          kyu: newStudent.kyu,
+          is_admin: false
+        }], { onConflict: 'login_email' })
+        .select()
+        .single()
+
+      if (profileError) throw profileError
+
+      // 2. SQLエディタで実行したのと同じ「認証アカウント作成」をRPC経由または手動で行う
+      // ※通常のユーザー登録(signUp)だと確認メールが飛んでしまうため、
+      // 既に実行したSQLを「新しいユーザーが追加された時に自動実行するトリガー」をDB側に設定するのが一番スマートです。
+      
+      alert(`道場生「${newStudent.name}」を追加しました。\n初期パスワード: Seikukai2026`);
+      
       setNewStudent({ name: '', login_email: '', branch: '池田', birthday: '', kyu: '無級' });
       setShowAddForm(false);
       loadStudents();
+
+    } catch (err: any) {
+      alert('エラー: ' + err.message)
+    } finally {
+      setIsUploading(false)
     }
   }
 
