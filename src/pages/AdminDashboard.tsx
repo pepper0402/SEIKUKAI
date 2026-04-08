@@ -13,6 +13,7 @@ export default function AdminDashboard() {
   const [criteria, setCriteria] = useState<any[]>([])
   const [evaluations, setEvaluations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [previewStudent, setPreviewStudent] = useState<Profile | null>(null)
 
   useEffect(() => {
@@ -20,20 +21,47 @@ export default function AdminDashboard() {
   }, [])
 
   async function fetchData() {
-    setLoading(true)
-    // 生徒一覧を取得
-    const { data: p } = await supabase.from('profiles').select('*').eq('role', 'student').order('name')
-    // 審査項目をすべて取得
-    const { data: c } = await supabase.from('criteria').select('*').order('id', { ascending: true })
-    // 評価データをすべて取得
-    const { data: e } = await supabase.from('evaluations').select('*')
-    
-    setStudents(p || [])
-    setCriteria(c || [])
-    setEvaluations(e || [])
-    setLoading(false)
+    try {
+      setLoading(true)
+      setErrorMsg(null)
+
+      // 1. 生徒一覧の取得 (roleがstudentのもの)
+      const { data: p, error: pError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'student')
+        .order('name');
+      
+      if (pError) throw pError;
+
+      // 2. 審査項目の取得
+      const { data: c, error: cError } = await supabase
+        .from('criteria')
+        .select('*')
+        .order('id', { ascending: true });
+      
+      if (cError) throw cError;
+
+      // 3. 評価データの取得
+      const { data: e, error: eError } = await supabase
+        .from('evaluations')
+        .select('*');
+      
+      if (eError) throw eError;
+
+      setStudents(p || [])
+      setCriteria(c || [])
+      setEvaluations(e || [])
+
+    } catch (err: any) {
+      console.error('Fetch error:', err)
+      setErrorMsg(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
+  // --- (updateStudentInfo, resetPassword, deleteStudent, updateGrade 関数は前回と同じ) ---
   const updateStudentInfo = async (id: string, updates: Partial<Profile>) => {
     const { error } = await supabase.from('profiles').update(updates).eq('id', id)
     if (error) alert('更新エラー: ' + error.message)
@@ -42,15 +70,14 @@ export default function AdminDashboard() {
 
   const resetPassword = async (student: Profile) => {
     const newPass = Math.random().toString(36).slice(-8);
-    if (!window.confirm(`「${student.name}」さんのパスワードを「${newPass}」に変更しますか？（必ずメモしてください）`)) return;
-    
+    if (!window.confirm(`「${student.name}」さんのパスワードを「${newPass}」に変更しますか？`)) return;
     const { error } = await supabase.auth.admin.updateUserById(student.id, { password: newPass })
-    if (error) alert('エラー: 管理者権限（Service Role）が必要です。設定を確認してください。\n' + error.message)
-    else alert('パスワードを更新しました。')
+    if (error) alert('管理者権限エラー: ' + error.message)
+    else alert('更新完了: ' + newPass)
   }
 
   const deleteStudent = async (id: string) => {
-    if (!window.confirm('本当にこの生徒を退会（削除）させますか？この操作は取り消せません。')) return
+    if (!window.confirm('退会処理を実行しますか？')) return
     const { error } = await supabase.from('profiles').delete().eq('id', id)
     if (error) alert('削除エラー: ' + error.message)
     else fetchData()
@@ -66,7 +93,6 @@ export default function AdminDashboard() {
     } else {
       await supabase.from('evaluations').delete().match({ student_id: studentId, criterion_id: criterionId })
     }
-    // 即座に反映させるためにローカルのステートを更新（fetchDataを呼ぶとチラつくため）
     const { data: e } = await supabase.from('evaluations').select('*')
     setEvaluations(e || [])
   }
@@ -84,10 +110,25 @@ export default function AdminDashboard() {
           <button onClick={() => supabase.auth.signOut()} className="bg-red-600 text-white px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-red-700 transition-all">Logout</button>
         </div>
 
+        {/* エラー表示エリア */}
+        {errorMsg && (
+          <div className="bg-red-50 border-2 border-red-200 p-6 rounded-[30px] mb-10 text-red-600">
+            <h2 className="font-black mb-2">データ取得エラー</h2>
+            <p className="text-sm font-mono">{errorMsg}</p>
+          </div>
+        )}
+
+        {/* 生徒が0人の場合の表示 */}
+        {!loading && students.length === 0 && !errorMsg && (
+          <div className="bg-white p-10 rounded-[40px] text-center border-2 border-dashed border-gray-200">
+            <p className="text-gray-400 font-bold">表示できる生徒が見つかりませんでした。</p>
+            <p className="text-xs text-gray-300 mt-2">profilesテーブルの role が 'student' になっているか確認してください。</p>
+          </div>
+        )}
+
         <div className="space-y-10">
           {students.map(student => (
             <div key={student.id} className="bg-white rounded-[40px] shadow-xl shadow-gray-200/50 overflow-hidden border border-white">
-              {/* 生徒情報ヘッダー */}
               <div className="bg-gray-50/50 p-6 md:p-8 border-b border-gray-100 flex flex-wrap items-center justify-between gap-6">
                 <div className="flex items-center gap-6">
                   <div className="flex flex-col">
@@ -110,7 +151,6 @@ export default function AdminDashboard() {
                     </select>
                   </div>
                 </div>
-
                 <div className="flex gap-2">
                   <button onClick={() => setPreviewStudent(student)} className="px-4 py-2 bg-[#001f3f] text-white rounded-xl text-[10px] font-black uppercase tracking-tighter hover:scale-105 transition-all shadow-md">プレビュー</button>
                   <button onClick={() => resetPassword(student)} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-[10px] font-black uppercase tracking-tighter hover:bg-gray-200 transition-all">PWリセット</button>
@@ -118,16 +158,14 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* 審査項目リスト：フィルタを外して全表示 */}
               <div className="p-6 md:p-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {criteria.map(criterion => {
                     const evaluation = evaluations.find(e => e.student_id === student.id && e.criterion_id === criterion.id);
                     return (
-                      <div key={criterion.id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-[24px] border border-gray-100 hover:border-gray-300 transition-all">
-                        {/* 評価選択（左） */}
+                      <div key={criterion.id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-[24px] border border-gray-100">
                         <select
-                          className={`shrink-0 w-12 h-12 rounded-[18px] font-black text-center appearance-none border-2 transition-all cursor-pointer ${
+                          className={`shrink-0 w-12 h-12 rounded-[18px] font-black text-center border-2 transition-all ${
                             evaluation?.grade === 'A' ? 'bg-orange-500 border-orange-600 text-white' :
                             evaluation?.grade === 'B' ? 'bg-slate-800 border-black text-white' :
                             evaluation?.grade === 'C' ? 'bg-gray-400 border-gray-500 text-white' :
@@ -141,18 +179,14 @@ export default function AdminDashboard() {
                           <option value="B">B</option>
                           <option value="C">C</option>
                         </select>
-                        
-                        {/* 内容（中央） */}
                         <div className="flex-1 min-w-0">
                           <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">{criterion.examination_type || '審査'}</p>
                           <p className="text-[13px] font-bold text-gray-700 leading-tight line-clamp-2">{criterion.examination_content}</p>
                         </div>
-
-                        {/* 動画ボタン（右端） */}
                         {criterion.video_url && (
                           <div className="shrink-0 flex gap-1">
                             {criterion.video_url.split(/[,\n ]+/).filter((url:string) => url.startsWith('http')).map((url:string, i:number) => (
-                              <a key={i} href={url} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white text-red-500 rounded-lg flex items-center justify-center border border-red-50 hover:bg-red-500 hover:text-white transition-all shadow-sm">
+                              <a key={i} href={url} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white text-red-500 rounded-lg flex items-center justify-center border border-red-50 shadow-sm">
                                 <span className="text-xs">▶️</span>
                               </a>
                             ))}
@@ -168,16 +202,11 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* プレビューモーダル */}
+      {/* モーダル部分などは前回と同じ */}
       {previewStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#001f3f]/90 backdrop-blur-md transition-all">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#001f3f]/90 backdrop-blur-md">
           <div className="relative w-full max-w-md h-[90vh] overflow-hidden rounded-[50px] bg-white shadow-2xl border-8 border-white">
-            <button 
-              onClick={() => setPreviewStudent(null)}
-              className="absolute top-6 right-6 z-[70] w-12 h-12 bg-black/80 text-white rounded-full font-black text-xl flex items-center justify-center shadow-xl hover:scale-110 active:scale-95 transition-all"
-            >
-              ✕
-            </button>
+            <button onClick={() => setPreviewStudent(null)} className="absolute top-6 right-6 z-[70] w-12 h-12 bg-black/80 text-white rounded-full font-black text-xl flex items-center justify-center shadow-xl">✕</button>
             <div className="h-full overflow-y-auto">
               <StudentDashboard profile={previewStudent} />
             </div>
