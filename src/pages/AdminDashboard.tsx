@@ -351,27 +351,35 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
         })}
       </div>
 
+      {/* 審査項目リスト */}
       <div className="space-y-4">
         {criteria.map(c => (
           <div key={c.id} className="bg-white p-4 md:p-6 rounded-[30px] shadow-sm border border-gray-100 transition-all hover:shadow-md">
             <div className="flex flex-col mb-4">
               <span className="text-[9px] font-black text-gray-300 uppercase mb-1 tracking-wider">{c.examination_type}</span>
-              <p className="text-sm font-bold text-[#001f3f] leading-snug">{c.examination_content}</p>
               
-              {/* 動画URL展開セクション: カンマ,スペース,改行すべてに対応 */}
-              {c.video_url && (
-                <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
-                  {c.video_url.split(/[\s,\n]+/)
-                    .map((url: string) => url.trim().replace(/^"|"$/g, ''))
-                    .filter((url: string) => url.startsWith('http'))
-                    .map((url: string, index: number) => (
-                      <a key={index} href={url} target="_blank" rel="noopener noreferrer" className="text-lg bg-orange-50 text-orange-600 px-3 py-1.5 rounded-xl hover:bg-orange-600 hover:text-white transition-all border border-orange-100 shadow-sm active:scale-90">
-                        ▶️
-                      </a>
-                  ))}
-                </div>
-              )}
+              {/* 【修正箇所】内容と動画を横並びに配置 */}
+              <div className="flex items-start justify-between gap-4">
+                <p className="text-sm font-bold text-[#001f3f] leading-snug flex-1">
+                  {c.examination_content}
+                </p>
+                
+                {c.video_url && (
+                  <div className="flex flex-wrap gap-1 shrink-0">
+                    {c.video_url.split(/[\s,\n]+/)
+                      .map((url: string) => url.trim().replace(/^"|"$/g, ''))
+                      .filter((url: string) => url.startsWith('http'))
+                      .map((url: string, index: number) => (
+                        <a key={index} href={url} target="_blank" rel="noopener noreferrer" className="w-8 h-8 flex items-center justify-center bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-600 hover:text-white transition-all border border-orange-100 shadow-sm active:scale-90 text-xs">
+                          ▶️
+                        </a>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* 評価ボタン */}
             <div className="grid grid-cols-4 gap-2">
               {['A', 'B', 'C', 'D'].map(g => (
                 <button key={g} onClick={() => updateGrade(c.id, g)} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-300 active:bg-gray-100 hover:bg-gray-100'}`}>{g}</button>
