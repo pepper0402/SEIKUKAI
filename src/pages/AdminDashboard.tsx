@@ -9,7 +9,6 @@ const allKyuList = [
   '初段', '弍段', '参段', '四段', '五段'
 ];
 
-// 年齢計算
 const calculateAge = (birthdayStr: any) => {
   if (!birthdayStr || birthdayStr === "") return 0;
   try {
@@ -24,7 +23,6 @@ const calculateAge = (birthdayStr: any) => {
   } catch (e) { return 0; }
 };
 
-// 修行年数計算 (入会日からの経過)
 const calculateExperience = (createdAt: any) => {
   if (!createdAt) return "不明";
   try {
@@ -32,10 +30,8 @@ const calculateExperience = (createdAt: any) => {
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - start.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
     const years = Math.floor(diffDays / 365);
     const months = Math.floor((diffDays % 365) / 30);
-    
     if (years === 0) return `${months}ヶ月`;
     return `${years}年${months}ヶ月`;
   } catch (e) { return "不明"; }
@@ -158,7 +154,8 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-10 pt-16 md:pt-10">
         {selectedStudent ? (
           <EvaluationPanel 
-            key={`${selectedStudent.id}-${selectedStudent.kyu}-${selectedStudent.birthday}`} 
+            /* ここが重要：keyにIDを渡すことで、別の人を選んだ時にコンポーネントを強制リセットします */
+            key={selectedStudent.id} 
             student={selectedStudent} 
             onRefresh={loadStudents} 
             allBranchList={allBranchList} 
