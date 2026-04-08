@@ -14,7 +14,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   useEffect(() => { loadStudents() }, [loadStudents])
 
-  // CSVインポート機能の復旧
   const handleCsvImport = async (type: 'students' | 'criteria') => {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = '.csv';
@@ -30,27 +29,18 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
             const cols = row.split(',');
             if (cols[0]) {
               await supabase.from('profiles').insert({ 
-                name: cols[0]?.trim(), 
-                kyu: cols[1]?.trim() || '無級', 
-                branch: cols[2]?.trim() || '池田', 
-                birthday: cols[3]?.trim() || null, 
-                joined_at: cols[5]?.trim() || new Date().toISOString(), 
-                is_admin: false 
+                name: cols[0]?.trim(), kyu: cols[1]?.trim() || '無級', branch: cols[2]?.trim() || '池田', 
+                birthday: cols[3]?.trim() || null, joined_at: cols[5]?.trim() || new Date().toISOString(), is_admin: false 
               });
             }
           }
         } else {
           for (const row of rows) {
             const [dan, type, content, video] = row.split(',');
-            await supabase.from('criteria').insert({ 
-              dan: dan?.trim(), 
-              examination_type: type?.trim(), 
-              examination_content: content?.trim(), 
-              video_url: video?.trim() || null 
-            });
+            await supabase.from('criteria').insert({ dan: dan?.trim(), examination_type: type?.trim(), examination_content: content?.trim(), video_url: video?.trim() || null });
           }
         }
-        alert('CSV読込が完了しました'); loadStudents();
+        alert('CSV読込完了'); loadStudents();
       };
       reader.readAsText(file);
     };
@@ -65,46 +55,41 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   const selectedStudent = students.find(s => s.id === selectedStudentId);
 
   return (
-    <div className="flex h-screen bg-white text-[#001f3f] font-sans overflow-hidden">
-      {/* 左サイドバー: 名簿選択 */}
-      <div className="w-80 bg-white border-r border-gray-100 flex flex-col shadow-sm">
+    <div className="flex h-screen bg-[#f8f9fa] text-[#001f3f] font-sans overflow-hidden">
+      {/* SIDEBAR: 名簿選択 */}
+      <div className="w-80 bg-white border-r border-gray-200 flex flex-col shadow-sm">
         <div className="p-6">
-          <h1 className="text-xl font-black mb-6 tracking-tighter">誠空会 管理パネル</h1>
-          
-          {/* CSVボタンの再配置 */}
-          <div className="flex gap-2 mb-6">
-            <button onClick={() => handleCsvImport('students')} className="flex-1 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-[10px] font-bold border border-gray-100 transition-colors">生徒CSV読込</button>
-            <button onClick={() => handleCsvImport('criteria')} className="flex-1 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-[10px] font-bold border border-gray-100 transition-colors">基準CSV読込</button>
+          <h1 className="text-xl font-black mb-6">誠空会 管理パネル</h1>
+          <div className="flex gap-2 mb-4">
+            <button onClick={() => handleCsvImport('students')} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-[10px] font-bold">生徒読込</button>
+            <button onClick={() => handleCsvImport('criteria')} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-[10px] font-bold">基準読込</button>
           </div>
-
           <input 
             type="text" placeholder="名前・級で検索..." 
-            className="w-full bg-gray-50 border border-transparent rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-500/20"
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-500/20"
             value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
           {filteredStudents.map(s => (
             <div 
               key={s.id} onClick={() => setSelectedStudentId(s.id)}
-              className={`p-5 mx-2 my-1 rounded-2xl cursor-pointer transition-all ${selectedStudentId === s.id ? 'bg-orange-50 text-orange-600' : 'hover:bg-gray-50 text-gray-500'}`}
+              className={`p-5 cursor-pointer transition-all ${selectedStudentId === s.id ? 'bg-orange-50 border-r-4 border-orange-500' : 'hover:bg-gray-50'}`}
             >
               <p className="font-bold text-sm">{s.name}</p>
-              <p className="text-[10px] font-bold opacity-60 uppercase">{s.kyu}</p>
+              <p className="text-[10px] font-bold text-orange-500">{s.kyu} <span className="text-gray-300 ml-2">{(s as any).branch}</span></p>
             </div>
           ))}
         </div>
       </div>
 
-      {/* 右メインエリア: 評価詳細 */}
-      <div className="flex-1 overflow-y-auto bg-gray-50/30">
+      {/* MAIN: 評価パネル */}
+      <div className="flex-1 overflow-y-auto p-10">
         {selectedStudent ? (
-          <div className="p-10 max-w-4xl mx-auto">
-            <EvaluationPanel key={selectedStudent.id} student={selectedStudent} onRefresh={loadStudents} />
-          </div>
+          <EvaluationPanel key={selectedStudent.id} student={selectedStudent} onRefresh={loadStudents} />
         ) : (
-          <div className="h-full flex items-center justify-center opacity-10">
-             <h2 className="font-black text-5xl italic tracking-tighter">SEIKUKAI</h2>
+          <div className="h-full flex items-center justify-center opacity-20">
+             <h2 className="font-black text-4xl italic">SEIKUKAI</h2>
           </div>
         )}
       </div>
@@ -148,44 +133,34 @@ function EvaluationPanel({ student: initialStudent, onRefresh }: any) {
   };
 
   return (
-    <div className="space-y-8">
-      <div className="bg-white rounded-[40px] p-8 shadow-sm border border-gray-100 flex justify-between items-center">
+    <div className="max-w-3xl mx-auto">
+      <div className="bg-white rounded-[40px] p-8 shadow-xl shadow-gray-200/50 border border-white mb-8 flex justify-between items-center">
         <div>
-          <h2 className="text-4xl font-black mb-2 tracking-tighter">{student.name}</h2>
+          <h2 className="text-4xl font-black mb-2">{student.name}</h2>
           <span className="text-xs font-bold text-orange-500 uppercase tracking-widest">{kyu}</span>
         </div>
         <div className="text-right">
           <p className="text-6xl font-black leading-none">{totalScore.toFixed(0)}</p>
-          <button onClick={() => setShowPreview(true)} className="mt-4 px-6 py-2 bg-gray-100 hover:bg-gray-200 rounded-xl text-[10px] font-black uppercase transition-all">Preview Mobile</button>
+          <button onClick={() => setShowPreview(true)} className="mt-4 px-4 py-2 bg-gray-100 rounded-xl text-[10px] font-black uppercase">Preview</button>
         </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto no-scrollbar">
+      <div className="flex gap-2 overflow-x-auto no-scrollbar mb-8">
         {['白帯', '黄帯', '青帯', '橙帯/紫帯', '緑帯', '茶帯', '黒帯'].map(b => (
-          <button 
-            key={b} onClick={() => setViewBelt(b)}
-            className={`px-6 py-3 rounded-2xl text-[10px] font-bold whitespace-nowrap transition-all ${viewBelt === b ? 'bg-[#001f3f] text-white' : 'bg-white text-gray-400 border border-gray-100 hover:border-gray-200'}`}
-          >
-            {b}
-          </button>
+          <button key={b} onClick={() => setViewBelt(b)} className={`px-5 py-2.5 rounded-2xl text-[10px] font-bold whitespace-nowrap transition-all border ${viewBelt === b ? 'bg-[#001f3f] text-white border-transparent' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-200'}`}>{b}</button>
         ))}
       </div>
 
       <div className="space-y-4">
         {criteria.map(c => (
-          <div key={c.id} className="bg-white p-6 rounded-[30px] border border-gray-100 flex justify-between items-center group shadow-sm">
+          <div key={c.id} className="bg-white p-6 rounded-[30px] border border-gray-100 flex justify-between items-center group">
             <div className="flex-1 pr-4">
               <span className="text-[9px] font-black text-gray-300 uppercase block mb-1">{c.examination_type}</span>
               <p className="font-bold text-sm leading-snug">{c.examination_content}</p>
             </div>
             <div className="flex gap-1.5">
               {['A', 'B', 'C', 'D'].map(g => (
-                <button 
-                  key={g} onClick={() => handleGradeUpdate(c.id, g)}
-                  className={`w-11 h-11 rounded-xl font-black transition-all ${c.grade === g ? 'bg-orange-500 text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-300 hover:bg-gray-100'}`}
-                >
-                  {g}
-                </button>
+                <button key={g} onClick={() => handleGradeUpdate(c.id, g)} className={`w-11 h-11 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-300 hover:bg-gray-100'}`}>{g}</button>
               ))}
             </div>
           </div>
@@ -193,8 +168,8 @@ function EvaluationPanel({ student: initialStudent, onRefresh }: any) {
       </div>
 
       {showPreview && (
-        <div className="fixed inset-0 z-50 bg-[#001f3f]/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-[380px] h-[80vh] rounded-[50px] overflow-hidden relative shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-[#001f3f]/90 flex items-center justify-center p-4 backdrop-blur-md">
+          <div className="bg-white w-full max-w-md h-[90vh] rounded-[50px] overflow-hidden relative shadow-2xl">
             <button onClick={() => setShowPreview(false)} className="absolute top-6 right-6 z-[60] bg-black text-white w-10 h-10 rounded-full font-black">✕</button>
             <StudentDashboard profile={student} />
           </div>
