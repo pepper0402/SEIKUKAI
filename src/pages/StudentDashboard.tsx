@@ -69,7 +69,6 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
     <div className="min-h-screen bg-[#f8f9fa] pb-12 text-[#001f3f]">
       {/* 帯色メインヘッダー */}
       <div className={`${theme.bg} ${theme.text} px-6 pt-12 pb-24 rounded-b-[60px] shadow-2xl relative overflow-hidden transition-all duration-700`}>
-        {/* 背景の大きな文字装飾 */}
         <div className="absolute top-0 right-0 opacity-[0.08] text-[14rem] font-black italic -mr-20 -mt-16 pointer-events-none select-none">
           {theme.name.slice(0,1)}
         </div>
@@ -80,14 +79,12 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
               <p className="text-[10px] font-black uppercase tracking-[0.4em] opacity-60">Seikukai Portal</p>
               <div className="flex items-center gap-4">
                 <h1 className="text-4xl font-black tracking-tighter leading-none">{profile.name}</h1>
-                {/* 現在の級を大きく表示するバッジ */}
                 <div className={`${theme.badge} px-4 py-2 rounded-2xl shadow-lg flex flex-col items-center justify-center min-w-[70px] border border-white/20 backdrop-blur-sm transition-transform active:scale-95`}>
                   <span className="text-[9px] font-black uppercase leading-none mb-1 opacity-80">{theme.name}</span>
                   <span className="text-xl font-black leading-none tracking-tighter">{profile.kyu || '無級'}</span>
                 </div>
               </div>
             </div>
-            {/* 設定・ログアウト */}
             <div className="flex gap-3">
               <button onClick={handlePasswordChange} className="w-12 h-12 bg-black/5 rounded-2xl flex items-center justify-center text-xl shadow-inner hover:bg-black/10 transition-all">⚙️</button>
               <button onClick={() => supabase.auth.signOut()} className="w-12 h-12 bg-black/5 rounded-2xl flex items-center justify-center text-xl shadow-inner hover:bg-red-500/20 transition-all">🚪</button>
@@ -120,7 +117,6 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
               </div>
             )}
           </div>
-          {/* プログレスバー */}
           <div className="relative h-4 bg-gray-50 rounded-full overflow-hidden shadow-inner p-1">
             <div 
               className={`h-full rounded-full transition-all duration-1000 ease-out shadow-sm ${isEligible ? 'bg-green-500' : 'bg-[#001f3f]'}`}
@@ -130,7 +126,7 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
           </div>
         </div>
 
-        {/* 審査項目 */}
+        {/* 審査項目リスト */}
         <div className="flex items-center justify-between px-2 mb-6">
           <h2 className="font-black text-[11px] text-gray-400 uppercase tracking-[0.3em] italic opacity-80">
             Examination List
@@ -139,35 +135,45 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
         
         <div className="space-y-4">
           {currentCriteria.map((c) => (
-            <div key={c.id} className="bg-white rounded-[32px] p-5 flex items-center gap-5 shadow-sm border border-gray-50 hover:shadow-xl transition-all duration-300 group">
-              {/* 評価 A-D */}
-              <div className={`shrink-0 w-16 h-16 rounded-[22px] flex items-center justify-center font-black text-2xl border-2 transition-all ${
-                c.grade === 'A' ? 'bg-orange-50 border-orange-500 text-orange-600 shadow-lg shadow-orange-100' : 
-                c.grade === 'B' ? 'bg-slate-50 border-slate-800 text-slate-800' :
-                c.grade ? 'bg-gray-50 border-gray-100 text-gray-300' : 
-                'bg-white border-dashed border-gray-100 text-gray-100'
-              }`}>
-                {c.grade || '-'}
+            <div key={c.id} className="bg-white rounded-[32px] p-5 shadow-sm border border-gray-50 hover:shadow-xl transition-all duration-300 group">
+              <div className="flex items-start gap-4">
+                {/* 評価 A-D */}
+                <div className={`shrink-0 w-14 h-14 rounded-[20px] flex items-center justify-center font-black text-xl border-2 transition-all ${
+                  c.grade === 'A' ? 'bg-orange-50 border-orange-500 text-orange-600 shadow-lg shadow-orange-100' : 
+                  c.grade === 'B' ? 'bg-slate-50 border-slate-800 text-slate-800' :
+                  c.grade ? 'bg-gray-50 border-gray-100 text-gray-300' : 
+                  'bg-white border-dashed border-gray-100 text-gray-100'
+                }`}>
+                  {c.grade || '-'}
+                </div>
+
+                {/* 内容 */}
+                <div className="flex-1 min-w-0 pt-1">
+                  <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest mb-1 leading-none">{c.examination_type || '審査'}</p>
+                  <p className="text-[14px] font-bold text-[#001f3f] leading-[1.4] break-words">{c.examination_content}</p>
+                </div>
               </div>
 
-              {/* 内容 */}
-              <div className="flex-1 min-w-0">
-                <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest mb-1 leading-none">{c.examination_type || '審査'}</p>
-                <p className="text-[15px] font-bold text-[#001f3f] leading-[1.3] break-words">{c.examination_content}</p>
-              </div>
-
-              {/* 動画リンク */}
+              {/* 動画リンクエリア (複数対応) */}
               {c.video_url && (
-                <a 
-                  href={c.video_url} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="shrink-0 w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-90"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                  </svg>
-                </a>
+                <div className="mt-4 pt-4 border-t border-gray-50 flex flex-wrap gap-2">
+                  {c.video_url
+                    .split(/[\s,\n]+/)
+                    .map((url: string) => url.trim().replace(/^"|"$/g, ''))
+                    .filter((url: string) => url.startsWith('http'))
+                    .map((url: string, index: number) => (
+                      <a 
+                        key={index}
+                        href={url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="w-10 h-10 bg-red-50 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-90 border border-red-100"
+                        title={`お手本動画 ${index + 1}`}
+                      >
+                        <span className="text-xs">▶️</span>
+                      </a>
+                  ))}
+                </div>
               )}
             </div>
           ))}
