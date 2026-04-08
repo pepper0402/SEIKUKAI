@@ -39,7 +39,7 @@ const calculateExperience = (createdAt: any) => {
 
 const getBeltColorClass = (beltName: string) => {
   switch (beltName) {
-    case '白帯': return 'bg-gray-100 text-gray-600 border-gray-200';
+    case '白帯': return 'bg-white text-gray-500 border-gray-200';
     case '黄帯': return 'bg-yellow-400 text-yellow-900 border-yellow-500';
     case '青帯': return 'bg-blue-600 text-white border-blue-700';
     case '橙帯': return 'bg-orange-500 text-white border-orange-600';
@@ -227,7 +227,6 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList }: 
   const [criteria, setCriteria] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   
-  // 重要：親の更新に引きずられないよう、内部ステートとして管理
   const [student, setStudent] = useState(initialStudent);
 
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
@@ -295,9 +294,18 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList }: 
   return (
     <div className="max-w-2xl mx-auto pb-20">
       <div className="bg-[#001f3f] rounded-[40px] p-6 md:p-8 text-white mb-8 shadow-2xl relative overflow-hidden animate-in fade-in slide-in-from-bottom-4">
-        <div className="relative z-10 flex flex-wrap justify-between items-center gap-4">
+        <div className="relative z-10 flex flex-wrap justify-between items-start gap-4">
           <div className="flex-1 min-w-[200px]">
-            <h2 className="text-3xl font-black mb-4 tracking-tighter">{student.name}</h2>
+            <div className="flex items-center gap-3 mb-4">
+              <h2 className="text-3xl font-black tracking-tighter leading-none">{student.name}</h2>
+              {/* PREVIEWボタンを名前の横に配置 */}
+              <button 
+                onClick={() => setShowPreview(true)} 
+                className="bg-white/10 hover:bg-white/20 text-white/60 hover:text-white px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider transition-all border border-white/10"
+              >
+                Preview
+              </button>
+            </div>
             <div className="flex flex-wrap gap-4 items-center">
               <div>
                 <p className="text-[10px] font-black text-white/40 mb-1 uppercase">GRADE</p>
@@ -334,11 +342,20 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList }: 
               const tabKey = (b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b;
               const isSelected = viewBelt === tabKey;
               return (
-                <button key={b} onClick={() => setViewBelt(tabKey)} className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap border-2 transition-all ${isSelected ? `${getBeltColorClass(b)} shadow-md scale-105` : `bg-white text-gray-400 border-gray-100 hover:border-gray-300`}`} style={!isSelected ? { borderLeftColor: getRawColorCode(b), borderLeftWidth: '4px' } : {}}>{b}</button>
+                <button 
+                  key={b} 
+                  onClick={() => setViewBelt(tabKey)} 
+                  className={`px-4 py-2.5 rounded-xl text-[10px] font-black whitespace-nowrap border transition-all 
+                    ${isSelected 
+                      ? `${getBeltColorClass(b)} shadow-lg scale-105 border-transparent` 
+                      : `bg-white text-gray-400 border-gray-100 hover:border-gray-300`
+                    }`}
+                >
+                  {b}
+                </button>
               )
             })}
           </div>
-          <button onClick={() => setShowPreview(true)} className="shrink-0 px-6 py-2 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase shadow-lg">Preview</button>
         </div>
       </div>
 
