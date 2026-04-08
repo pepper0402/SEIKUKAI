@@ -9,6 +9,7 @@ const allKyuList = [
   '初段', '弍段', '参段', '四段', '五段'
 ];
 
+// どんな形式の日付が来ても年齢を計算する
 const calculateAge = (birthdayStr: any) => {
   if (!birthdayStr || birthdayStr === "") return 0;
   try {
@@ -88,6 +89,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         </button>
       )}
 
+      {/* サイドバー */}
       <div className={`fixed inset-y-0 left-0 z-40 w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
         <div className="p-6 bg-[#001f3f] text-white">
           <div className="flex justify-between items-center mb-6">
@@ -210,10 +212,15 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   const [showPreview, setShowPreview] = useState(false);
   const [criteria, setCriteria] = useState<any[]>([])
 
+  // 年齢判定と色付きラベルの設定
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
   const isGeneral = age >= 15;
+  
+  // ラベル部分のスタイル定義
   const sectionLabel = isGeneral ? "一般部" : "少年部";
-  const sectionColorClass = isGeneral ? "bg-rose-500 text-white" : "bg-sky-400 text-[#001f3f]";
+  const sectionColorClass = isGeneral 
+    ? "bg-rose-500 text-white" 
+    : "bg-sky-400 text-[#001f3f]";
 
   const targetBelt = useMemo(() => {
     const k = student.kyu || '無級';
@@ -244,11 +251,10 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   const totalScore = criteria.reduce((acc, curr) => acc + (curr.grade === 'A' ? 2.5 : curr.grade === 'B' ? 1.5 : curr.grade === 'C' ? 0.5 : 0), 0)
   const isScoreReady = totalScore >= 80
 
-  const handlePromote = async (step: number = 1) => {
+  const handlePromote = async () => {
     const currentIdx = allKyuList.indexOf(student.kyu || '無級');
-    const nextIdx = currentIdx + step;
-    const nextKyu = allKyuList[nextIdx];
-    if (!nextKyu || !window.confirm(`${nextKyu}へ昇級を確定しますか？`)) return;
+    const nextKyu = allKyuList[currentIdx + 1];
+    if (!nextKyu || !window.confirm(`${nextKyu}へ昇級確定しますか？`)) return;
     await supabase.from('profiles').update({ kyu: nextKyu }).eq('id', student.id);
     onRefresh();
   };
@@ -270,6 +276,7 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
               </div>
               <div className="h-8 w-[1px] bg-white/10"></div>
               <div>
+                {/* ここでラベルに色を付与 */}
                 <span className={`inline-block px-3 py-0.5 rounded-full text-[10px] font-black uppercase mb-1 ${sectionColorClass}`}>
                   {sectionLabel}
                 </span>
@@ -282,10 +289,9 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
             <p className={`text-6xl md:text-7xl font-black leading-none ${isScoreReady ? 'text-green-400' : 'text-white'}`}>{totalScore.toFixed(0)}</p>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-8 relative z-10">
-          <button onClick={() => handlePromote(1)} className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${isScoreReady ? 'bg-orange-500 text-white shadow-lg' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>昇級確定</button>
-          <button onClick={() => handlePromote(2)} className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${isScoreReady ? 'bg-orange-600 text-white shadow-lg' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>1級飛び級</button>
-          <button onClick={() => setShowEdit(true)} className="py-4 bg-white/20 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white/30 transition-all md:col-span-1">データ修正</button>
+        <div className="grid grid-cols-2 gap-3 mt-8 relative z-10">
+          <button onClick={handlePromote} className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${isScoreReady ? 'bg-orange-500 text-white shadow-lg' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>昇級確定</button>
+          <button onClick={() => setShowEdit(true)} className="py-4 bg-white/20 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white/30 transition-all">データ修正</button>
         </div>
       </div>
 
@@ -296,18 +302,7 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
               const tabKey = (b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b;
               const isSelected = viewBelt === tabKey;
               return (
-                <button 
-                  key={b} 
-                  onClick={() => setViewBelt(tabKey)} 
-                  className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap border-2 transition-all 
-                    ${isSelected 
-                      ? `${getBeltColorClass(b)} shadow-md scale-105` 
-                      : `bg-white text-gray-400 border-gray-100 hover:border-gray-300`
-                    }`}
-                  style={!isSelected ? { borderLeftColor: b === '白帯' ? '#ccc' : b === '黄帯' ? '#fbbf24' : b === '青帯' ? '#2563eb' : b === '橙帯' ? '#f97316' : b === '紫帯' ? '#9333ea' : b === '緑帯' ? '#16a34a' : b === '茶帯' ? '#5d4037' : '#000', borderLeftWidth: '4px' } : {}}
-                >
-                  {b}
-                </button>
+                <button key={b} onClick={() => setViewBelt(tabKey)} className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap border-2 transition-all ${isSelected ? `${getBeltColorClass(b)} shadow-md scale-105` : 'bg-white text-gray-400 border-transparent hover:border-gray-100'}`}>{b}</button>
               )
             })}
           </div>
