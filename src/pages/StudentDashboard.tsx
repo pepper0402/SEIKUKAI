@@ -1,6 +1,17 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase, Profile } from '../lib/supabase'
 
+// 修行期間計算ユーティリティ
+const calculateTrainingPeriod = (joinedAt: string | null) => {
+  if (!joinedAt) return '未設定';
+  const start = new Date(joinedAt);
+  const now = new Date();
+  const diffDays = Math.ceil(Math.abs(now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  const years = Math.floor(diffDays / 365);
+  const months = Math.floor((diffDays % 365) / 30);
+  return years === 0 ? `${months}ヶ月` : `${years}年 ${months}ヶ月`;
+};
+
 // 年齢計算ユーティリティ
 const calculateAge = (birthdayStr: any) => {
   if (!birthdayStr) return 0;
@@ -38,27 +49,21 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
   const [currentCriteria, setCurrentCriteria] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
-  // 一般部かキッズかの判定
   const isGeneral = useMemo(() => calculateAge(profile.birthday) >= 15, [profile.birthday]);
   const theme = useMemo(() => getBeltTheme(profile.kyu || '無級', isGeneral), [profile.kyu, isGeneral]);
+  const trainingPeriod = useMemo(() => calculateTrainingPeriod((profile as any).joined_at), [profile]);
 
   useEffect(() => {
     async function loadData() {
       setLoading(true)
-      
-      // DB上の「橙帯/紫帯」という形式に対応させる
-      const targetBelt = (theme.name === '橙帯' || theme.name === '紫帯') 
-        ? '橙帯/紫帯' 
-        : theme.name;
+      const targetBelt = (theme.name === '橙帯' || theme.name === '紫帯') ? '橙帯/紫帯' : theme.name;
 
-      // 1. 現在の級の審査基準を取得
       const { data: criteriaData } = await supabase
         .from('criteria')
         .select('*')
         .eq('dan', targetBelt)
         .order('id', { ascending: true })
 
-      // 2. 自分の評価済データを取得
       const { data: scoresData } = await supabase
         .from('evaluations')
         .select('*')
@@ -89,42 +94,36 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
   const totalScore = currentCriteria.reduce((acc, curr) => acc + gradeToScore(curr.grade), 0);
   const isEligible = totalScore >= 80;
 
-  if (loading) return <div className="flex justify-center py-20 animate-pulse text-gray-300 font-black tracking-widest">LOADING...</div>
+  if (loading) return <div className="flex justify-center py-20 animate-pulse text-gray-300 font-black tracking-widest uppercase">Loading...</div>
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] pb-12 text-[#001f3f]">
       {/* 帯色メインヘッダー */}
-      <div className={`${theme.bg} ${theme.text} px-6 pt-10 pb-20 rounded-b-[50px] shadow-2xl relative overflow-hidden transition-all duration-700 border-b border-black/5`}>
+      <div className={`${theme.bg} ${theme.text} px-6 pt-10 pb-20 rounded-b-[50px] shadow-2xl relative overflow-hidden transition-all duration-700`}>
         <div className="absolute top-0 right-0 opacity-[0.08] text-[12rem] font-black italic -mr-16 -mt-12 pointer-events-none select-none">
           {theme.name.slice(0,1)}
         </div>
         
         <div className="relative z-10 max-w-md mx-auto">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-start">
             <div className="flex flex-col gap-1">
               <p className="text-[9px] font-black uppercase tracking-[0.3em] opacity-60">Seikukai Portal</p>
-              <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-black tracking-tighter leading-none">{profile.name}</h1>
+              <h1 className="text-3xl font-black tracking-tighter leading-none mb-4">{profile.name}</h1>
+              <div className="flex gap-2">
                 <div className={`${theme.badge} px-3 py-1.5 rounded-xl shadow-lg flex flex-col items-center justify-center min-w-[60px] border border-white/20 backdrop-blur-sm`}>
                   <span className="text-[8px] font-black uppercase leading-none mb-0.5 opacity-80">{theme.name}</span>
                   <span className="text-lg font-black leading-none tracking-tighter">{profile.kyu || '無級'}</span>
+                </div>
+                <div className="bg-black/5 px-3 py-1.5 rounded-xl flex flex-col items-center justify-center min-w-[60px] border border-white/10 backdrop-blur-sm">
+                  <span className="text-[8px] font-black uppercase leading-none mb-0.5 opacity-40 italic">Training</span>
+                  <span className="text-xs font-black leading-none tracking-tighter">{trainingPeriod}</span>
                 </div>
               </div>
             </div>
             
             <div className="flex flex-col gap-1.5">
-              <button 
-                onClick={handlePasswordChange} 
-                className="px-4 py-1.5 bg-black/5 rounded-xl text-[10px] font-bold shadow-inner hover:bg-black/10 transition-all border border-white/10"
-              >
-                設定
-              </button>
-              <button 
-                onClick={() => supabase.auth.signOut()} 
-                className="px-4 py-1.5 bg-black/5 rounded-xl text-[10px] font-bold shadow-inner hover:bg-red-500/20 text-red-600 transition-all border border-white/10"
-              >
-                ログアウト
-              </button>
+              <button onClick={handlePasswordChange} className="px-4 py-1.5 bg-black/5 rounded-xl text-[10px] font-bold shadow-inner hover:bg-black/10 transition-all border border-white/10">設定</button>
+              <button onClick={() => supabase.auth.signOut()} className="px-4 py-1.5 bg-black/5 rounded-xl text-[10px] font-bold shadow-inner hover:bg-red-500/20 text-red-600 transition-all border border-white/10">ログアウト</button>
             </div>
           </div>
         </div>
@@ -143,9 +142,7 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
             </div>
 
             {isEligible ? (
-              <div className="bg-[#001f3f] text-white px-4 py-2 rounded-xl font-black text-[10px] animate-bounce shadow-lg uppercase tracking-tighter">
-                審査可能
-              </div>
+              <div className="bg-[#001f3f] text-white px-4 py-2 rounded-xl font-black text-[10px] animate-bounce shadow-lg uppercase tracking-tighter">審査可能</div>
             ) : (
               <div className="text-right">
                 <p className="text-[10px] font-black text-orange-500 mb-1 tracking-tighter italic leading-none">あと {(80 - totalScore).toFixed(0)}点</p>
@@ -157,31 +154,21 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
           </div>
 
           <div className="relative h-3 bg-gray-50 rounded-full overflow-hidden shadow-inner p-0.5">
-            <div 
-              className={`h-full rounded-full transition-all duration-1000 ease-out shadow-sm ${isEligible ? 'bg-green-500' : 'bg-[#001f3f]'}`}
-              style={{ width: `${Math.min((totalScore / 100) * 100, 100)}%` }}
-            ></div>
+            <div className={`h-full rounded-full transition-all duration-1000 ease-out shadow-sm ${isEligible ? 'bg-green-500' : 'bg-[#001f3f]'}`} style={{ width: `${Math.min((totalScore / 100) * 100, 100)}%` }}></div>
             <div className="absolute left-[80%] top-0 w-0.5 h-full bg-white/40"></div>
           </div>
         </div>
 
         <div className="flex items-center justify-between px-2 mb-4">
-          <h2 className="font-black text-[10px] text-gray-400 uppercase tracking-[0.2em] italic opacity-80">
-            Examination List ({theme.name})
-          </h2>
+          <h2 className="font-black text-[10px] text-gray-400 uppercase tracking-[0.2em] italic opacity-80">Examination List ({theme.name})</h2>
         </div>
         
         <div className="space-y-3">
-          {currentCriteria.length === 0 && !loading && (
-            <div className="bg-white rounded-[28px] p-8 text-center text-gray-300 font-black italic text-sm border border-dashed border-gray-200">
-              NO EXAMINATION DATA FOUND
-            </div>
-          )}
           {currentCriteria.map((c) => (
-            <div key={c.id} className="bg-white rounded-[28px] p-4 shadow-sm border border-gray-50 hover:shadow-md transition-all duration-300 group">
+            <div key={c.id} className="bg-white rounded-[28px] p-4 shadow-sm border border-gray-50 hover:shadow-md transition-all duration-300">
               <div className="flex items-center gap-4">
-                <div className={`shrink-0 w-12 h-12 rounded-[18px] flex items-center justify-center font-black text-lg border-2 transition-all ${
-                  c.grade === 'A' ? 'bg-orange-50 border-orange-500 text-orange-600 shadow-lg shadow-orange-100' : 
+                <div className={`shrink-0 w-12 h-12 rounded-[18px] flex items-center justify-center font-black text-lg border-2 ${
+                  c.grade === 'A' ? 'bg-orange-50 border-orange-500 text-orange-600' : 
                   c.grade === 'B' ? 'bg-slate-50 border-slate-800 text-slate-800' :
                   c.grade === 'C' ? 'bg-gray-50 border-gray-400 text-gray-600' : 
                   'bg-white border-dashed border-gray-100 text-gray-100'
@@ -195,21 +182,11 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
                 </div>
 
                 {c.video_url && (
-                  <div className="shrink-0 flex gap-1 ml-auto">
-                    {c.video_url
-                      .split(/[\s,\n]+/)
-                      .map((url: string) => url.trim().replace(/^"|"$/g, ''))
-                      .filter((url: string) => url.startsWith('http'))
-                      .map((url: string, index: number) => (
-                        <a 
-                          key={index}
-                          href={url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="w-9 h-9 bg-red-50 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-90 border border-red-100"
-                        >
-                          <span className="text-base">▶️</span>
-                        </a>
+                  <div className="shrink-0 flex gap-1">
+                    {c.video_url.split(/[\s,\n]+/).map((url: string) => url.trim()).filter((url: string) => url.startsWith('http')).map((url: string, index: number) => (
+                      <a key={index} href={url} target="_blank" rel="noopener noreferrer" className="w-9 h-9 bg-red-50 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-90 border border-red-100">
+                        <span className="text-base">▶️</span>
+                      </a>
                     ))}
                   </div>
                 )}
