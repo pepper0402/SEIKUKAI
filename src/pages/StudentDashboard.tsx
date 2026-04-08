@@ -90,15 +90,15 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
             <div className="flex flex-col gap-2">
               <button 
                 onClick={handlePasswordChange} 
-                className="px-3 py-1.5 bg-black/5 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-inner hover:bg-black/10 transition-all border border-white/10"
+                className="px-4 py-1.5 bg-black/5 rounded-xl text-[10px] font-black shadow-inner hover:bg-black/10 transition-all border border-white/10"
               >
-                Pass
+                設定
               </button>
               <button 
                 onClick={() => supabase.auth.signOut()} 
-                className="px-3 py-1.5 bg-black/5 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-inner hover:bg-red-500/20 text-red-600 transition-all border border-white/10"
+                className="px-4 py-1.5 bg-black/5 rounded-xl text-[10px] font-black shadow-inner hover:bg-red-500/20 text-red-600 transition-all border border-white/10"
               >
-                Logout
+                ログアウト
               </button>
             </div>
           </div>
@@ -129,4 +129,66 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
               </div>
             )}
           </div>
-          <div className="relative
+          <div className="relative h-4 bg-gray-50 rounded-full overflow-hidden shadow-inner p-1">
+            <div 
+              className={`h-full rounded-full transition-all duration-1000 ease-out shadow-sm ${isEligible ? 'bg-green-500' : 'bg-[#001f3f]'}`}
+              style={{ width: `${Math.min((totalScore / 100) * 100, 100)}%` }}
+            ></div>
+            <div className="absolute left-[80%] top-0 w-0.5 h-full bg-white/40"></div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between px-2 mb-6">
+          <h2 className="font-black text-[11px] text-gray-400 uppercase tracking-[0.3em] italic opacity-80">
+            Examination List
+          </h2>
+        </div>
+        
+        <div className="space-y-4">
+          {currentCriteria.map((c) => (
+            <div key={c.id} className="bg-white rounded-[32px] p-5 shadow-sm border border-gray-50 hover:shadow-xl transition-all duration-300 group">
+              <div className="flex items-center gap-4">
+                {/* 評価 A-D */}
+                <div className={`shrink-0 w-14 h-14 rounded-[20px] flex items-center justify-center font-black text-xl border-2 transition-all ${
+                  c.grade === 'A' ? 'bg-orange-50 border-orange-500 text-orange-600 shadow-lg shadow-orange-100' : 
+                  c.grade === 'B' ? 'bg-slate-50 border-slate-800 text-slate-800' :
+                  c.grade ? 'bg-gray-50 border-gray-100 text-gray-300' : 
+                  'bg-white border-dashed border-gray-100 text-gray-100'
+                }`}>
+                  {c.grade || '-'}
+                </div>
+
+                {/* 内容テキストエリア */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest mb-1 leading-none">{c.examination_type || '審査'}</p>
+                  <p className="text-[14px] font-bold text-[#001f3f] leading-[1.4] break-words">{c.examination_content}</p>
+                </div>
+
+                {/* 動画リンクエリア（完全に横並び） */}
+                {c.video_url && (
+                  <div className="shrink-0 flex gap-1.5 ml-auto">
+                    {c.video_url
+                      .split(/[\s,\n]+/)
+                      .map((url: string) => url.trim().replace(/^"|"$/g, ''))
+                      .filter((url: string) => url.startsWith('http'))
+                      .map((url: string, index: number) => (
+                        <a 
+                          key={index}
+                          href={url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="w-10 h-10 bg-red-50 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-90 border border-red-100"
+                        >
+                          <span className="text-lg">▶️</span>
+                        </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
