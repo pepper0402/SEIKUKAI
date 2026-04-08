@@ -2,17 +2,24 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase, Profile } from '../lib/supabase'
 import StudentDashboard from './StudentDashboard'
 
-// --- 定数・ユーティリティ ---
+// --- ユーティリティ ---
 const allKyuList = [
   '無級', '準10級', '10級', '準9級', '9級', '準8級', '8級', '準7級', '7級', 
   '準6級', '6級', '準5級', '5級', '準4級', '4級', '準3級', '3級', '準2級', '2級', '準1級', '1級', 
   '初段', '弍段', '参段', '四段', '五段'
 ];
 
-const calculateAge = (birthday: string) => {
+// input[type="date"] 用にフォーマットする関数
+const formatDateForInput = (dateStr: string | null | undefined) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr.replace(/\//g, '-'));
+  if (isNaN(d.getTime())) return '';
+  return d.toISOString().split('T')[0];
+};
+
+const calculateAge = (birthday: string | null | undefined) => {
   if (!birthday) return 0;
-  const normalized = birthday.replace(/\//g, '-').split('T')[0];
-  const birthDate = new Date(normalized);
+  const birthDate = new Date(birthday.replace(/\//g, '-'));
   if (isNaN(birthDate.getTime())) return 0;
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
@@ -130,15 +137,10 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 }
 
 function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
-  // 誕生日の読み込みを確実にする
-  const getInitialBirthday = () => {
-    if (!student.birthday) return '';
-    return student.birthday.split('T')[0].replace(/\//g, '-');
-  };
-
+  // 初期化時に誕生日を確実に変換
   const [formData, setFormData] = useState({ 
     ...student, 
-    birthday: getInitialBirthday() 
+    birthday: formatDateForInput(student.birthday) 
   });
   const [loading, setLoading] = useState(false);
 
@@ -158,11 +160,11 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('退会処理を行いますか？この生徒の全データが削除されます。')) return;
+    if (!window.confirm('退会処理を行いますか？')) return;
     setLoading(true);
     const { error } = await supabase.from('profiles').delete().eq('id', student.id);
     if (error) alert(error.message);
-    else { alert('退会処理を完了しました'); onRefresh(); onClose(); }
+    else { onRefresh(); onClose(); }
     setLoading(false);
   };
 
@@ -170,29 +172,29 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#001f3f]/90 backdrop-blur-sm">
       <div className="bg-white w-full max-w-md rounded-[40px] p-8 shadow-2xl relative">
         <button onClick={onClose} className="absolute top-6 right-6 font-black text-gray-400 hover:text-black">✕</button>
-        <h2 className="text-xl font-black italic mb-6 uppercase">会員詳細変更</h2>
+        <h2 className="text-xl font-black italic mb-6 uppercase tracking-tighter">会員詳細変更</h2>
         <form onSubmit={handleUpdate} className="space-y-4">
           <div>
             <label className="text-[9px] font-black text-gray-400 uppercase ml-2">氏名</label>
-            <input type="text" className="w-full bg-gray-50 border-none rounded-2xl px-4 py-3 text-sm outline-none font-bold" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+            <input type="text" className="w-full bg-gray-50 border-none rounded-2xl px-4 py-3 text-sm outline-none font-bold" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-[9px] font-black text-gray-400 uppercase ml-2">現在の級</label>
-              <select className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm font-bold outline-none" value={formData.kyu} onChange={e => setFormData({...formData, kyu: e.target.value})}>
+              <select className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm font-bold outline-none" value={formData.kyu || '無級'} onChange={e => setFormData({...formData, kyu: e.target.value})}>
                 {allKyuList.map(k => <option key={k} value={k}>{k}</option>)}
               </select>
             </div>
             <div>
               <label className="text-[9px] font-black text-gray-400 uppercase ml-2">所属支部</label>
-              <select className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm font-bold outline-none" value={formData.branch} onChange={e => setFormData({...formData, branch: e.target.value})}>
+              <select className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm font-bold outline-none" value={formData.branch || '池田'} onChange={e => setFormData({...formData, branch: e.target.value})}>
                 {allBranchList.map((b:string) => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
           </div>
           <div>
             <label className="text-[9px] font-black text-gray-400 uppercase ml-2">生年月日</label>
-            <input type="date" className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm outline-none font-bold" value={formData.birthday} onChange={e => setFormData({...formData, birthday: e.target.value})} />
+            <input type="date" className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm outline-none font-bold" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} />
           </div>
           <div className="pt-2 space-y-2">
             <button type="submit" disabled={loading} className="w-full py-4 bg-[#001f3f] text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all">保存する</button>
@@ -207,8 +209,12 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
 function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   const [showEdit, setShowEdit] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  
+  // 生年月日から判定
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
   const isGeneral = age >= 15;
+  const sectionLabel = isGeneral ? '一般部' : '少年部';
+
   const [criteria, setCriteria] = useState<any[]>([])
 
   const targetBelt = useMemo(() => {
@@ -254,17 +260,25 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
 
   return (
     <div className="max-w-2xl mx-auto pb-20">
+      {/* ヘッダー情報パネル */}
       <div className="bg-[#001f3f] rounded-[40px] p-6 md:p-8 text-white mb-8 shadow-xl relative overflow-hidden">
         <div className="relative z-10 flex justify-between items-center">
           <div className="flex-1">
             <h2 className="text-3xl font-black mb-4 leading-tight">{student.name}</h2>
-            <div className="flex gap-6 items-center">
-              <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">CURRENT</p><p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p></div>
+            <div className="flex gap-8 items-center">
+              <div>
+                <p className="text-[10px] font-black text-white/40 uppercase mb-1">CURRENT</p>
+                <p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p>
+              </div>
               <div className="h-8 w-[1px] bg-white/10"></div>
-              <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">{isGeneral ? '一般' : 'キッズ'}</p><p className="text-xl font-black">{targetBelt}</p></div>
+              {/* OBIを消して 部門ラベルを大きく表示 */}
+              <div>
+                <p className="text-[10px] font-black text-white/40 uppercase mb-1">{sectionLabel}</p>
+                <p className="text-xl font-black">{targetBelt}</p>
+              </div>
             </div>
           </div>
-          <div className="text-right min-w-[120px]">
+          <div className="text-right min-w-[130px]">
             <p className="text-[10px] font-black text-white/40 mb-1 uppercase tracking-widest">SCORE</p>
             <p className={`text-6xl md:text-7xl font-black leading-none ${isScoreReady ? 'text-green-400' : 'text-white'}`}>{totalScore.toFixed(0)}</p>
           </div>
