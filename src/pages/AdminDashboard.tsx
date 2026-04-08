@@ -9,23 +9,19 @@ const allKyuList = [
   '初段', '弍段', '参段', '四段', '五段'
 ];
 
-// 文字列から確実に年齢を出す（初期読み込み失敗対策）
+// どんな形式の日付が来ても年齢を計算する
 const calculateAge = (birthdayStr: any) => {
   if (!birthdayStr || birthdayStr === "") return 0;
   try {
-    // T以降をカットし、スラッシュをハイフンに統一
     const datePart = String(birthdayStr).split('T')[0].replace(/\//g, '-');
     const birthDate = new Date(datePart);
     if (isNaN(birthDate.getTime())) return 0;
-
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const m = today.getMonth() - birthDate.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
     return age;
-  } catch (e) {
-    return 0;
-  }
+  } catch (e) { return 0; }
 };
 
 const getBeltColorClass = (beltName: string) => {
@@ -54,7 +50,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     const { data } = await supabase.from('profiles').select('*').eq('is_admin', false)
     if (data) {
       setStudents(data);
-      // 選択中の生徒がいる場合、最新データで上書きして再描画を促す
       if (selectedStudent) {
         const updated = data.find(s => s.id === selectedStudent.id);
         if (updated) setSelectedStudent({ ...updated }); 
@@ -65,7 +60,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   useEffect(() => {
     loadStudents()
     if (window.innerWidth < 768) setIsSidebarOpen(false)
-  }, []) // 初回のみ。loadStudents内のselectedStudent依存は一旦切る
+  }, [loadStudents])
 
   const allBranchList = useMemo(() => {
     const branches = students.map(s => (s as any).branch).filter(Boolean)
@@ -149,7 +144,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 }
 
 function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
-  // DBからの生データをinput type="date"が食える形に強制整形
   const getSafeDate = (val: any) => {
     if (!val) return "";
     return String(val).split('T')[0].replace(/\//g, '-');
@@ -172,7 +166,7 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
     }).eq('id', student.id);
     
     if (error) alert(error.message);
-    else { alert('更新しました'); onRefresh(); onClose(); }
+    else { onRefresh(); onClose(); }
     setLoading(false);
   };
 
@@ -218,10 +212,15 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   const [showPreview, setShowPreview] = useState(false);
   const [criteria, setCriteria] = useState<any[]>([])
 
-  // 年齢判定（ここで初回読み込み時にも確実に計算される）
+  // 年齢判定と色付きラベルの設定
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
   const isGeneral = age >= 15;
+  
+  // ラベル部分のスタイル定義
   const sectionLabel = isGeneral ? "一般部" : "少年部";
+  const sectionColorClass = isGeneral 
+    ? "bg-rose-500 text-white" 
+    : "bg-sky-400 text-[#001f3f]";
 
   const targetBelt = useMemo(() => {
     const k = student.kyu || '無級';
@@ -235,113 +234,4 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   }, [student.kyu, isGeneral]);
 
   const dbBeltName = (targetBelt === '橙帯' || targetBelt === '紫帯') ? '橙帯/紫帯' : targetBelt;
-  const [viewBelt, setViewBelt] = useState(dbBeltName);
-
-  useEffect(() => {
-    async function fetchEvals() {
-      const { data: crit } = await supabase.from('criteria').select('*').eq('dan', viewBelt).order('id')
-      const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
-      setCriteria((crit || []).map(c => {
-        const existing = evals?.find(e => e.criterion_id === c.id);
-        return { ...c, grade: existing ? existing.grade : 'D' };
-      }))
-    }
-    fetchEvals()
-  }, [student.id, viewBelt])
-
-  const totalScore = criteria.reduce((acc, curr) => acc + (curr.grade === 'A' ? 2.5 : curr.grade === 'B' ? 1.5 : curr.grade === 'C' ? 0.5 : 0), 0)
-  const isScoreReady = totalScore >= 80
-
-  const handlePromote = async () => {
-    const currentIdx = allKyuList.indexOf(student.kyu || '無級');
-    const nextKyu = allKyuList[currentIdx + 1];
-    if (!nextKyu || !window.confirm(`${nextKyu}へ昇級しますか？`)) return;
-    await supabase.from('profiles').update({ kyu: nextKyu }).eq('id', student.id);
-    onRefresh();
-  };
-
-  const belts = isGeneral 
-    ? ['白帯', '黄帯', '青帯', '紫帯', '緑帯', '茶帯', '黒帯'] 
-    : ['白帯', '黄帯', '青帯', '橙帯', '緑帯', '茶帯', '黒帯'];
-
-  return (
-    <div className="max-w-2xl mx-auto pb-20">
-      <div className="bg-[#001f3f] rounded-[40px] p-6 md:p-8 text-white mb-8 shadow-2xl relative overflow-hidden">
-        <div className="relative z-10 flex justify-between items-center">
-          <div className="flex-1">
-            <h2 className="text-3xl font-black mb-4 leading-tight tracking-tighter">{student.name}</h2>
-            <div className="flex gap-6 items-center">
-              <div>
-                <p className="text-[10px] font-black text-white/40 uppercase mb-1">GRADE</p>
-                <p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p>
-              </div>
-              <div className="h-8 w-[1px] bg-white/10"></div>
-              <div>
-                <p className="text-[10px] font-black text-white/40 uppercase mb-1">{sectionLabel}</p>
-                <p className="text-xl font-black">{targetBelt}</p>
-              </div>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-[10px] font-black text-white/40 mb-1 uppercase tracking-widest">TOTAL SCORE</p>
-            <p className={`text-6xl md:text-7xl font-black leading-none ${isScoreReady ? 'text-green-400' : 'text-white'}`}>{totalScore.toFixed(0)}</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3 mt-8 relative z-10">
-          <button onClick={handlePromote} className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${isScoreReady ? 'bg-orange-500 text-white shadow-lg' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>昇級確定</button>
-          <button onClick={() => setShowEdit(true)} className="py-4 bg-white/20 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white/30 transition-all">データ修正</button>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-4 mb-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex-1 flex gap-2 overflow-x-auto no-scrollbar pb-1">
-            {belts.map(b => {
-              const tabKey = (b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b;
-              const isSelected = viewBelt === tabKey;
-              return (
-                <button key={b} onClick={() => setViewBelt(tabKey)} className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap border-2 transition-all ${isSelected ? `${getBeltColorClass(b)} shadow-md scale-105` : 'bg-white text-gray-400 border-transparent hover:border-gray-100'}`}>{b}</button>
-              )
-            })}
-          </div>
-          <button onClick={() => setShowPreview(true)} className="shrink-0 px-6 py-2 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">Preview</button>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        {criteria.map(c => (
-          <div key={c.id} className="bg-white p-5 md:p-6 rounded-[35px] shadow-sm border border-gray-100">
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div className="flex-1">
-                <span className="text-[9px] font-black text-gray-300 uppercase mb-1 block">{c.examination_type}</span>
-                <p className="text-sm font-bold text-[#001f3f] leading-snug">{c.examination_content}</p>
-              </div>
-              {c.video_url && (
-                <a href={c.video_url} target="_blank" rel="noreferrer" className="w-8 h-8 flex items-center justify-center bg-gray-50 text-orange-500 rounded-lg border border-gray-100 text-xs">▶️</a>
-              )}
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {['A', 'B', 'C', 'D'].map(g => (
-                <button key={g} onClick={() => {
-                  const newGrade = g;
-                  setCriteria(prev => prev.map(item => item.id === c.id ? { ...item, grade: newGrade } : item));
-                  supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: newGrade }, { onConflict: 'student_id,criterion_id' }).then();
-                }} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg' : 'bg-gray-50 text-gray-300 hover:bg-gray-100'}`}>{g}</button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {showEdit && <EditStudentModal student={student} allBranchList={allBranchList} onClose={() => setShowEdit(false)} onRefresh={onRefresh} />}
-      {showPreview && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-[#001f3f]/95 backdrop-blur-md">
-          <div className="relative w-full max-w-md h-[90vh] overflow-hidden rounded-[50px] bg-white shadow-2xl">
-            <button onClick={() => setShowPreview(false)} className="absolute top-6 right-6 z-[120] w-10 h-10 bg-black text-white rounded-full font-black">✕</button>
-            <div className="h-full overflow-y-auto"><StudentDashboard profile={student} /></div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+  const [viewBelt, setViewBelt]
