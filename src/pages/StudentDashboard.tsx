@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { supabase, Profile } from '../lib/supabase'
 
 const getBeltTheme = (kyu: string) => {
-  if (!kyu || kyu === '無級') return { name: '白帯', bg: 'bg-white', text: 'text-gray-900', badge: 'bg-gray-100 text-gray-500' };
-  if (kyu.includes('10級') || kyu.includes('9級')) return { name: '黄帯', bg: 'bg-yellow-400', text: 'text-yellow-900', badge: 'bg-yellow-500 text-white' };
-  if (kyu.includes('8級') || kyu.includes('7級')) return { name: '青帯', bg: 'bg-blue-600', text: 'text-white', badge: 'bg-blue-800 text-white' };
-  if (kyu.includes('6級') || kyu.includes('5級')) return { name: '橙・紫帯', bg: 'bg-orange-500', text: 'text-white', badge: 'bg-orange-700 text-white' };
-  if (kyu.includes('4級') || kyu.includes('3級')) return { name: '緑帯', bg: 'bg-green-600', text: 'text-white', badge: 'bg-green-800 text-white' };
-  if (kyu.includes('2級') || kyu.includes('1級')) return { name: '茶帯', bg: 'bg-amber-900', text: 'text-white', badge: 'bg-amber-950 text-white' };
-  if (kyu.includes('段')) return { name: '黒帯', bg: 'bg-gray-900', text: 'text-white', badge: 'bg-black text-white' };
+  const k = kyu || '無級';
+  if (k === '無級' || k.includes('準10級')) return { name: '白帯', bg: 'bg-white', text: 'text-gray-900', badge: 'bg-gray-100 text-gray-500' };
+  if (k.includes('10級') || k.includes('9級')) return { name: '黄帯', bg: 'bg-yellow-400', text: 'text-yellow-900', badge: 'bg-yellow-500 text-white' };
+  if (k.includes('8級') || k.includes('7級')) return { name: '青帯', bg: 'bg-blue-600', text: 'text-white', badge: 'bg-blue-800 text-white' };
+  if (k.includes('6級') || k.includes('5級')) return { name: '橙・紫帯', bg: 'bg-orange-500', text: 'text-white', badge: 'bg-orange-700 text-white' };
+  if (k.includes('4級') || k.includes('3級')) return { name: '緑帯', bg: 'bg-green-600', text: 'text-white', badge: 'bg-green-800 text-white' };
+  if (k.includes('2級') || k.includes('1級')) return { name: '茶帯', bg: 'bg-amber-900', text: 'text-white', badge: 'bg-amber-950 text-white' };
+  if (k.includes('段')) return { name: '黒帯', bg: 'bg-gray-900', text: 'text-white', badge: 'bg-black text-white' };
   return { name: '白帯', bg: 'bg-white', text: 'text-gray-900', badge: 'bg-gray-100 text-gray-400' };
 }
 
@@ -79,15 +80,27 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
               <p className="text-[10px] font-black uppercase tracking-[0.4em] opacity-60">Seikukai Portal</p>
               <div className="flex items-center gap-4">
                 <h1 className="text-4xl font-black tracking-tighter leading-none">{profile.name}</h1>
-                <div className={`${theme.badge} px-4 py-2 rounded-2xl shadow-lg flex flex-col items-center justify-center min-w-[70px] border border-white/20 backdrop-blur-sm transition-transform active:scale-95`}>
+                <div className={`${theme.badge} px-4 py-2 rounded-2xl shadow-lg flex flex-col items-center justify-center min-w-[70px] border border-white/20 backdrop-blur-sm`}>
                   <span className="text-[9px] font-black uppercase leading-none mb-1 opacity-80">{theme.name}</span>
                   <span className="text-xl font-black leading-none tracking-tighter">{profile.kyu || '無級'}</span>
                 </div>
               </div>
             </div>
-            <div className="flex gap-3">
-              <button onClick={handlePasswordChange} className="w-12 h-12 bg-black/5 rounded-2xl flex items-center justify-center text-xl shadow-inner hover:bg-black/10 transition-all">⚙️</button>
-              <button onClick={() => supabase.auth.signOut()} className="w-12 h-12 bg-black/5 rounded-2xl flex items-center justify-center text-xl shadow-inner hover:bg-red-500/20 transition-all">🚪</button>
+            
+            {/* 文字ボタンに変更した設定・ログアウトエリア */}
+            <div className="flex flex-col gap-2">
+              <button 
+                onClick={handlePasswordChange} 
+                className="px-3 py-1.5 bg-black/5 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-inner hover:bg-black/10 transition-all border border-white/10"
+              >
+                Pass
+              </button>
+              <button 
+                onClick={() => supabase.auth.signOut()} 
+                className="px-3 py-1.5 bg-black/5 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-inner hover:bg-red-500/20 text-red-600 transition-all border border-white/10"
+              >
+                Logout
+              </button>
             </div>
           </div>
         </div>
@@ -126,7 +139,6 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
           </div>
         </div>
 
-        {/* 審査項目リスト */}
         <div className="flex items-center justify-between px-2 mb-6">
           <h2 className="font-black text-[11px] text-gray-400 uppercase tracking-[0.3em] italic opacity-80">
             Examination List
@@ -137,7 +149,6 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
           {currentCriteria.map((c) => (
             <div key={c.id} className="bg-white rounded-[32px] p-5 shadow-sm border border-gray-50 hover:shadow-xl transition-all duration-300 group">
               <div className="flex items-start gap-4">
-                {/* 評価 A-D */}
                 <div className={`shrink-0 w-14 h-14 rounded-[20px] flex items-center justify-center font-black text-xl border-2 transition-all ${
                   c.grade === 'A' ? 'bg-orange-50 border-orange-500 text-orange-600 shadow-lg shadow-orange-100' : 
                   c.grade === 'B' ? 'bg-slate-50 border-slate-800 text-slate-800' :
@@ -147,14 +158,12 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
                   {c.grade || '-'}
                 </div>
 
-                {/* 内容 */}
                 <div className="flex-1 min-w-0 pt-1">
                   <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest mb-1 leading-none">{c.examination_type || '審査'}</p>
                   <p className="text-[14px] font-bold text-[#001f3f] leading-[1.4] break-words">{c.examination_content}</p>
                 </div>
               </div>
 
-              {/* 動画リンクエリア (複数対応) */}
               {c.video_url && (
                 <div className="mt-4 pt-4 border-t border-gray-50 flex flex-wrap gap-2">
                   {c.video_url
@@ -168,9 +177,8 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="w-10 h-10 bg-red-50 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-90 border border-red-100"
-                        title={`お手本動画 ${index + 1}`}
                       >
-                        <span className="text-xs">▶️</span>
+                        <span className="text-[10px] font-black uppercase">Play</span>
                       </a>
                   ))}
                 </div>
