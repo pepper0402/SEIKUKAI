@@ -9,6 +9,7 @@ const allKyuList = [
   '初段', '弍段', '参段', '四段', '五段'
 ];
 
+// 年齢計算
 const calculateAge = (birthdayStr: any) => {
   if (!birthdayStr || birthdayStr === "") return 0;
   try {
@@ -23,6 +24,7 @@ const calculateAge = (birthdayStr: any) => {
   } catch (e) { return 0; }
 };
 
+// 修行年数計算 (入会日からの経過)
 const calculateExperience = (createdAt: any) => {
   if (!createdAt) return "不明";
   try {
@@ -30,8 +32,10 @@ const calculateExperience = (createdAt: any) => {
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - start.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
     const years = Math.floor(diffDays / 365);
     const months = Math.floor((diffDays % 365) / 30);
+    
     if (years === 0) return `${months}ヶ月`;
     return `${years}年${months}ヶ月`;
   } catch (e) { return "不明"; }
@@ -67,7 +71,7 @@ const getRawColorCode = (beltName: string) => {
 
 export default function AdminDashboard({ profile: adminProfile }: { profile: Profile }) {
   const [students, setStudents] = useState<Profile[]>([])
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
+  const [selectedStudent, setSelectedStudent] = useState<Profile | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [branchFilter, setBranchFilter] = useState('すべて')
   const [sortBy, setSortBy] = useState<'name' | 'kyu'>('name')
@@ -75,17 +79,19 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   const loadStudents = useCallback(async () => {
     const { data } = await supabase.from('profiles').select('*').eq('is_admin', false)
-    if (data) setStudents(data);
-  }, [])
+    if (data) {
+      setStudents(data);
+      if (selectedStudent) {
+        const updated = data.find(s => s.id === selectedStudent.id);
+        if (updated) setSelectedStudent({ ...updated }); 
+      }
+    }
+  }, [selectedStudent])
 
   useEffect(() => {
     loadStudents()
     if (window.innerWidth < 768) setIsSidebarOpen(false)
   }, [loadStudents])
-
-  const selectedStudent = useMemo(() => 
-    students.find(s => s.id === selectedStudentId) || null
-  , [students, selectedStudentId])
 
   const allBranchList = useMemo(() => {
     const branches = students.map(s => (s as any).branch).filter(Boolean)
@@ -136,7 +142,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         </div>
         <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
           {filteredStudents.map(s => (
-            <div key={s.id} onClick={() => {setSelectedStudentId(s.id); if(window.innerWidth<768)setIsSidebarOpen(false);}} className={`p-5 border-l-4 cursor-pointer transition-all ${selectedStudentId === s.id ? 'bg-orange-50 border-orange-500 shadow-inner' : 'border-transparent hover:bg-gray-50'}`}>
+            <div key={s.id} onClick={() => {setSelectedStudent(s); if(window.innerWidth<768)setIsSidebarOpen(false);}} className={`p-5 border-l-4 cursor-pointer transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500 shadow-inner' : 'border-transparent hover:bg-gray-50'}`}>
               <div className="flex justify-between items-center">
                 <div>
                   <p className="font-black text-sm">{s.name}</p>
@@ -152,7 +158,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-10 pt-16 md:pt-10">
         {selectedStudent ? (
           <EvaluationPanel 
-            key={selectedStudent.id} 
+            key={`${selectedStudent.id}-${selectedStudent.kyu}-${selectedStudent.birthday}`} 
             student={selectedStudent} 
             onRefresh={loadStudents} 
             allBranchList={allBranchList} 
@@ -172,18 +178,28 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
     if (!val) return "";
     return String(val).split('T')[0].replace(/\//g, '-');
   };
-  const [formData, setFormData] = useState({ ...student, birthday: getSafeDate(student.birthday) });
+
+  const [formData, setFormData] = useState({ 
+    ...student, 
+    birthday: getSafeDate(student.birthday) 
+  });
   const [loading, setLoading] = useState(false);
+
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     const { error } = await supabase.from('profiles').update({
-      name: formData.name, kyu: formData.kyu, branch: formData.branch, birthday: formData.birthday || null,
+      name: formData.name,
+      kyu: formData.kyu,
+      branch: formData.branch,
+      birthday: formData.birthday || null,
     }).eq('id', student.id);
+    
     if (error) alert(error.message);
     else { onRefresh(); onClose(); }
     setLoading(false);
   };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#001f3f]/90 backdrop-blur-sm">
       <div className="bg-white w-full max-w-md rounded-[40px] p-8 shadow-2xl relative">
@@ -213,7 +229,7 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
             <input type="date" className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm font-bold border-none outline-none" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} />
           </div>
           <div className="pt-2">
-            <button type="submit" disabled={loading} className="w-full py-4 bg-[#001f3f] text-white rounded-2xl font-black uppercase text-xs shadow-lg">保存する</button>
+            <button type="submit" disabled={loading} className="w-full py-4 bg-[#001f3f] text-white rounded-2xl font-black uppercase text-xs shadow-lg active:scale-95 transition-all">保存する</button>
           </div>
         </form>
       </div>
@@ -225,10 +241,10 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   const [showEdit, setShowEdit] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [criteria, setCriteria] = useState<any[]>([])
-  const [loading, setLoading] = useState(true) // 読み込み状態
 
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
   const experience = useMemo(() => calculateExperience(student.created_at), [student.created_at]);
+  
   const isGeneral = age >= 15;
   const sectionLabel = isGeneral ? "一般部" : "キッズ";
   const sectionColorClass = isGeneral ? "bg-rose-500 text-white" : "bg-sky-400 text-[#001f3f]";
@@ -248,28 +264,18 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   const [viewBelt, setViewBelt] = useState(dbBeltName);
 
   useEffect(() => {
-    let isCancelled = false;
     async function fetchEvals() {
-      setLoading(true);
       const { data: crit } = await supabase.from('criteria').select('*').eq('dan', viewBelt).order('id')
       const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
-      
-      if (!isCancelled) {
-        setCriteria((crit || []).map(c => {
-          const existing = evals?.find(e => e.criterion_id === c.id);
-          return { ...c, grade: existing ? existing.grade : 'D' };
-        }));
-        setLoading(false);
-      }
+      setCriteria((crit || []).map(c => {
+        const existing = evals?.find(e => e.criterion_id === c.id);
+        return { ...c, grade: existing ? existing.grade : 'D' };
+      }))
     }
     fetchEvals()
-    return () => { isCancelled = true; };
   }, [student.id, viewBelt])
 
-  const totalScore = useMemo(() => 
-    criteria.reduce((acc, curr) => acc + (curr.grade === 'A' ? 2.5 : curr.grade === 'B' ? 1.5 : curr.grade === 'C' ? 0.5 : 0), 0)
-  , [criteria]);
-
+  const totalScore = criteria.reduce((acc, curr) => acc + (curr.grade === 'A' ? 2.5 : curr.grade === 'B' ? 1.5 : curr.grade === 'C' ? 0.5 : 0), 0)
   const isScoreReady = totalScore >= 80
 
   const handlePromote = async (step: number = 1) => {
@@ -287,23 +293,25 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
 
   return (
     <div className="max-w-2xl mx-auto pb-20">
-      <div className="bg-[#001f3f] rounded-[40px] p-6 md:p-8 text-white mb-8 shadow-2xl relative overflow-hidden animate-in fade-in slide-in-from-bottom-4">
+      <div className="bg-[#001f3f] rounded-[40px] p-6 md:p-8 text-white mb-8 shadow-2xl relative overflow-hidden">
         <div className="relative z-10 flex flex-wrap justify-between items-center gap-4">
           <div className="flex-1 min-w-[200px]">
-            <h2 className="text-3xl font-black mb-4 tracking-tighter">{student.name}</h2>
+            <h2 className="text-3xl font-black mb-4 leading-tight tracking-tighter">{student.name}</h2>
             <div className="flex flex-wrap gap-4 items-center">
               <div>
-                <p className="text-[10px] font-black text-white/40 mb-1 uppercase">GRADE</p>
+                <p className="text-[10px] font-black text-white/40 uppercase mb-1">GRADE</p>
                 <p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p>
               </div>
               <div className="h-8 w-[1px] bg-white/10"></div>
               <div>
-                <span className={`inline-block px-3 py-0.5 rounded-full text-[10px] font-black uppercase mb-1 ${sectionColorClass}`}>{sectionLabel}</span>
+                <span className={`inline-block px-3 py-0.5 rounded-full text-[10px] font-black uppercase mb-1 ${sectionColorClass}`}>
+                  {sectionLabel}
+                </span>
                 <p className="text-xl font-black">{currentBelt}</p>
               </div>
               <div className="h-8 w-[1px] bg-white/10"></div>
               <div>
-                <p className="text-[10px] font-black text-white/40 mb-1 uppercase">修行年数</p>
+                <p className="text-[10px] font-black text-white/40 uppercase mb-1">修行年数</p>
                 <p className="text-xl font-black">{experience}</p>
               </div>
             </div>
@@ -314,9 +322,9 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-8 relative z-10">
-          <button onClick={() => handlePromote(1)} className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${isScoreReady ? 'bg-orange-500 text-white' : 'bg-white/10 text-white/30'}`}>昇級確定</button>
-          <button onClick={() => handlePromote(2)} className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${isScoreReady ? 'bg-orange-600 text-white' : 'bg-white/10 text-white/30'}`}>1級飛び級</button>
-          <button onClick={() => setShowEdit(true)} className="py-4 bg-white/20 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest">データ修正</button>
+          <button onClick={() => handlePromote(1)} className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${isScoreReady ? 'bg-orange-500 text-white shadow-lg' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>昇級確定</button>
+          <button onClick={() => handlePromote(2)} className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${isScoreReady ? 'bg-orange-600 text-white shadow-lg' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>1級飛び級</button>
+          <button onClick={() => setShowEdit(true)} className="py-4 bg-white/20 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white/30 transition-all md:col-span-1">データ修正</button>
         </div>
       </div>
 
@@ -327,39 +335,51 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
               const tabKey = (b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b;
               const isSelected = viewBelt === tabKey;
               return (
-                <button key={b} onClick={() => setViewBelt(tabKey)} className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap border-2 transition-all ${isSelected ? `${getBeltColorClass(b)} shadow-md scale-105` : `bg-white text-gray-400 border-gray-100 hover:border-gray-300`}`} style={!isSelected ? { borderLeftColor: getRawColorCode(b), borderLeftWidth: '4px' } : {}}>{b}</button>
+                <button 
+                  key={b} 
+                  onClick={() => setViewBelt(tabKey)} 
+                  className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap border-2 transition-all 
+                    ${isSelected 
+                      ? `${getBeltColorClass(b)} shadow-md scale-105` 
+                      : `bg-white text-gray-400 border-gray-100 hover:border-gray-300`
+                    }`}
+                  style={!isSelected ? { 
+                    borderLeftColor: getRawColorCode(b), 
+                    borderLeftWidth: '4px' 
+                  } : {}}
+                >
+                  {b}
+                </button>
               )
             })}
           </div>
-          <button onClick={() => setShowPreview(true)} className="shrink-0 px-6 py-2 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase shadow-lg">Preview</button>
+          <button onClick={() => setShowPreview(true)} className="shrink-0 px-6 py-2 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">Preview</button>
         </div>
       </div>
 
       <div className="space-y-4">
-        {loading ? (
-          <div className="text-center py-20 animate-pulse text-gray-300 font-black italic">FETCHING DATA...</div>
-        ) : (
-          criteria.map(c => (
-            <div key={c.id} className="bg-white p-5 md:p-6 rounded-[35px] shadow-sm border border-gray-100 animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <div className="flex-1">
-                  <span className="text-[9px] font-black text-gray-300 uppercase mb-1 block">{c.examination_type}</span>
-                  <p className="text-sm font-bold text-[#001f3f] leading-snug">{c.examination_content}</p>
-                </div>
-                {c.video_url && <a href={c.video_url} target="_blank" rel="noreferrer" className="w-8 h-8 flex items-center justify-center bg-gray-50 text-orange-500 rounded-lg border border-gray-100 text-xs">▶️</a>}
+        {criteria.map(c => (
+          <div key={c.id} className="bg-white p-5 md:p-6 rounded-[35px] shadow-sm border border-gray-100">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div className="flex-1">
+                <span className="text-[9px] font-black text-gray-300 uppercase mb-1 block">{c.examination_type}</span>
+                <p className="text-sm font-bold text-[#001f3f] leading-snug">{c.examination_content}</p>
               </div>
-              <div className="grid grid-cols-4 gap-2">
-                {['A', 'B', 'C', 'D'].map(g => (
-                  <button key={g} onClick={() => {
-                    const newGrade = g;
-                    setCriteria(prev => prev.map(item => item.id === c.id ? { ...item, grade: newGrade } : item));
-                    supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: newGrade }, { onConflict: 'student_id,criterion_id' }).then();
-                  }} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg' : 'bg-gray-50 text-gray-300 hover:bg-gray-100'}`}>{g}</button>
-                ))}
-              </div>
+              {c.video_url && (
+                <a href={c.video_url} target="_blank" rel="noreferrer" className="w-8 h-8 flex items-center justify-center bg-gray-50 text-orange-500 rounded-lg border border-gray-100 text-xs">▶️</a>
+              )}
             </div>
-          ))
-        )}
+            <div className="grid grid-cols-4 gap-2">
+              {['A', 'B', 'C', 'D'].map(g => (
+                <button key={g} onClick={() => {
+                  const newGrade = g;
+                  setCriteria(prev => prev.map(item => item.id === c.id ? { ...item, grade: newGrade } : item));
+                  supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: newGrade }, { onConflict: 'student_id,criterion_id' }).then();
+                }} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg' : 'bg-gray-50 text-gray-300 hover:bg-gray-100'}`}>{g}</button>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
 
       {showEdit && <EditStudentModal student={student} allBranchList={allBranchList} onClose={() => setShowEdit(false)} onRefresh={onRefresh} />}
