@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase, Profile } from '../lib/supabase'
 
+// 修行年数計算
 const calculateTrainingPeriod = (joinedDateStr: any) => {
   if (!joinedDateStr) return '未設定';
   const start = new Date(joinedDateStr);
@@ -13,16 +14,16 @@ const calculateTrainingPeriod = (joinedDateStr: any) => {
 
 const getBeltTheme = (kyu: string, isGeneral: boolean) => {
   const k = kyu || '無級';
-  if (k === '無級' || k.includes('10級')) return { name: '白帯', bg: 'bg-white', text: 'text-gray-900', badge: 'bg-gray-100 text-gray-500' };
-  if (k.match(/10|9/)) return { name: '黄帯', bg: 'bg-yellow-400', text: 'text-yellow-900', badge: 'bg-yellow-500 text-white' };
-  if (k.match(/8|7/)) return { name: '青帯', bg: 'bg-blue-600', text: 'text-white', badge: 'bg-blue-800 text-white' };
+  if (k === '無級' || k.includes('10級')) return { name: '白帯', bg: 'bg-white', text: 'text-black', badge: 'bg-black/10 text-black/40' };
+  if (k.match(/10|9/)) return { name: '黄帯', bg: 'bg-yellow-400', text: 'text-yellow-950', badge: 'bg-black/20 text-yellow-900' };
+  if (k.match(/8|7/)) return { name: '青帯', bg: 'bg-blue-600', text: 'text-white', badge: 'bg-white/20 text-white' };
   if (k.match(/6|5/)) {
     const name = isGeneral ? '紫帯' : '橙帯';
     return { name, bg: isGeneral ? 'bg-purple-600' : 'bg-orange-500', text: 'text-white', badge: 'bg-white/20 text-white' };
   }
-  if (k.match(/4|3/)) return { name: '緑帯', bg: 'bg-green-600', text: 'text-white', badge: 'bg-green-800 text-white' };
-  if (k.match(/2|1/)) return { name: '茶帯', bg: 'bg-amber-900', text: 'text-white', badge: 'bg-amber-950 text-white' };
-  return { name: '黒帯', bg: 'bg-gray-900', text: 'text-white', badge: 'bg-black text-white' };
+  if (k.match(/4|3/)) return { name: '緑帯', bg: 'bg-green-600', text: 'text-white', badge: 'bg-white/20 text-white' };
+  if (k.match(/2|1/)) return { name: '茶帯', bg: 'bg-[#5D4037]', text: 'text-white', badge: 'bg-white/20 text-white' };
+  return { name: '黒帯', bg: 'bg-black', text: 'text-white', badge: 'bg-white/20 text-white' };
 }
 
 export default function StudentDashboard({ profile }: { profile: Profile }) {
@@ -34,8 +35,7 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
   const isGeneral = useMemo(() => {
     const birthDate = new Date(profile.birthday || '');
     const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    return age >= 15;
+    return (today.getFullYear() - birthDate.getFullYear()) >= 15;
   }, [profile.birthday]);
 
   const theme = useMemo(() => getBeltTheme(profile.kyu || '無級', isGeneral), [profile.kyu, isGeneral]);
@@ -60,57 +60,71 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
 
   const totalScore = currentCriteria.reduce((acc, curr) => acc + (curr.grade === 'A' ? 2.5 : curr.grade === 'B' ? 1.5 : curr.grade === 'C' ? 0.5 : 0), 0);
 
-  if (loading) return <div className="p-20 text-center font-black animate-pulse">LOADING...</div>
+  if (loading) return <div className="h-screen bg-black flex items-center justify-center text-white font-black italic animate-pulse">LOADING...</div>
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa] pb-12 text-[#001f3f]">
-      <div className={`${theme.bg} ${theme.text} px-6 pt-10 pb-20 rounded-b-[50px] shadow-2xl relative`}>
-        <div className="relative z-10 max-w-md mx-auto flex justify-between items-start">
-          <div>
-            <p className="text-[9px] font-black uppercase opacity-60">Student Portal</p>
-            <h1 className="text-3xl font-black tracking-tighter mb-2">{profile.name}</h1>
-            <div className="flex gap-2">
-              <div className={`${theme.badge} px-3 py-1.5 rounded-xl font-black text-xs`}>{profile.kyu || '無級'}</div>
-              <div className="bg-black/5 px-3 py-1.5 rounded-xl font-black text-xs">修行: {trainingPeriod}</div>
-            </div>
+    <div className="min-h-screen bg-black pb-12 text-white font-sans">
+      {/* HEADER */}
+      <div className={`${theme.bg} ${theme.text} px-6 pt-12 pb-20 rounded-b-[60px] relative shadow-2xl transition-all duration-500`}>
+        <div className="absolute top-0 right-0 opacity-10 text-[10rem] font-black italic -mr-10 -mt-10 select-none">
+          {theme.name.slice(0,1)}
+        </div>
+        <div className="relative z-10">
+          <p className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-1">Seikukai Portal</p>
+          <h1 className="text-4xl font-black italic tracking-tighter uppercase mb-4">{profile.name}</h1>
+          <div className="flex gap-2">
+            <div className={`${theme.badge} px-3 py-1.5 rounded-lg font-black text-xs uppercase`}>{profile.kyu || '無級'}</div>
+            <div className="bg-black/10 px-3 py-1.5 rounded-lg font-black text-xs opacity-70">修行: {trainingPeriod}</div>
           </div>
-          <button onClick={() => supabase.auth.signOut()} className="px-4 py-2 bg-black/5 rounded-xl text-[10px] font-black">LOGOUT</button>
         </div>
       </div>
 
-      <div className="px-5 -mt-10 relative z-20 max-w-md mx-auto">
-        <div className="bg-white rounded-[35px] p-4 shadow-xl mb-6">
-          <div className="flex bg-gray-100 p-1 rounded-2xl mb-4">
-            <button onClick={() => setViewMode('current')} className={`flex-1 py-2 rounded-xl text-[10px] font-black ${viewMode === 'current' ? 'bg-white shadow-sm' : 'text-gray-400'}`}>現在の審査</button>
-            <button onClick={() => setViewMode('history')} className={`flex-1 py-2 rounded-xl text-[10px] font-black ${viewMode === 'history' ? 'bg-white shadow-sm' : 'text-gray-400'}`}>履歴</button>
+      <div className="px-6 -mt-10 relative z-20">
+        {/* SCORE CARD */}
+        <div className="bg-[#111] border border-white/10 rounded-[40px] p-6 shadow-2xl mb-8">
+          <div className="flex bg-white/5 p-1 rounded-2xl mb-6">
+            <button onClick={() => setViewMode('current')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${viewMode === 'current' ? 'bg-white text-black' : 'text-white/40'}`}>Current</button>
+            <button onClick={() => setViewMode('history')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${viewMode === 'history' ? 'bg-white text-black' : 'text-white/40'}`}>History</button>
           </div>
-          {viewMode === 'current' && (
+
+          {viewMode === 'current' ? (
             <div className="text-center">
-              <p className="text-5xl font-black">{totalScore.toFixed(0)}<span className="text-sm opacity-20">/100</span></p>
-              <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-[#001f3f]" style={{ width: `${totalScore}%` }}></div></div>
+              <p className="text-6xl font-black italic leading-none text-white">{totalScore.toFixed(0)}<span className="text-sm opacity-20 not-italic ml-1">/100</span></p>
+              <div className="mt-4 h-2 bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${totalScore}%` }}></div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-2">
+              <p className="text-[10px] font-black text-orange-500 uppercase mb-1">Total Evaluations</p>
+              <p className="text-3xl font-black italic">{historyData.length} ITEMS</p>
             </div>
           )}
         </div>
 
+        {/* LIST */}
         <div className="space-y-3">
           {viewMode === 'current' ? (
             currentCriteria.map(c => (
-              <div key={c.id} className="bg-white rounded-[25px] p-4 shadow-sm flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black border-2 ${c.grade === 'A' ? 'border-orange-500 text-orange-500' : 'border-gray-100 text-gray-200'}`}>{c.grade || '-'}</div>
-                <div className="flex-1">
-                  <p className="text-[8px] font-black text-gray-300 uppercase">{c.examination_type}</p>
-                  <p className="text-xs font-bold leading-tight">{c.examination_content}</p>
+              <div key={c.id} className="bg-[#111] border border-white/5 p-5 rounded-[30px] flex items-center gap-4 group hover:border-white/20 transition-all">
+                <div className={`shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl border-2 ${c.grade === 'A' ? 'border-orange-500 text-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.3)]' : 'border-white/10 text-white/10'}`}>
+                  {c.grade || '-'}
                 </div>
+                <div className="flex-1">
+                  <span className="text-[8px] font-black text-white/30 uppercase block mb-0.5 tracking-tighter">{c.examination_type}</span>
+                  <p className="text-sm font-bold leading-tight text-white/90">{c.examination_content}</p>
+                </div>
+                {c.video_url && <a href={c.video_url} target="_blank" rel="noreferrer" className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center hover:bg-white/10 transition-all">▶️</a>}
               </div>
             ))
           ) : (
             historyData.map(h => (
-              <div key={h.id} className="bg-white rounded-[25px] p-4 shadow-sm flex items-center gap-4 border-l-4 border-orange-500">
-                <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center font-black">{h.grade}</div>
+              <div key={h.id} className="bg-[#111] border-l-4 border-orange-500 p-5 rounded-r-3xl flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center font-black text-lg">{h.grade}</div>
                 <div>
                   <p className="text-[8px] font-black text-orange-500 uppercase">{h.criteria?.dan}</p>
-                  <p className="text-xs font-bold">{h.criteria?.examination_content}</p>
-                  <p className="text-[7px] text-gray-300 font-black">{new Date(h.updated_at).toLocaleDateString()}</p>
+                  <p className="text-sm font-bold text-white/80">{h.criteria?.examination_content}</p>
+                  <p className="text-[8px] font-black text-white/20 uppercase mt-1">{new Date(h.updated_at).toLocaleDateString()}</p>
                 </div>
               </div>
             ))
