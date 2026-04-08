@@ -133,7 +133,6 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
   // 誕生日の読み込みを確実にする
   const getInitialBirthday = () => {
     if (!student.birthday) return '';
-    // YYYY/MM/DD や ISO形式を YYYY-MM-DD に統一
     return student.birthday.split('T')[0].replace(/\//g, '-');
   };
 
@@ -255,7 +254,6 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
 
   return (
     <div className="max-w-2xl mx-auto pb-20">
-      {/* ヘッダー情報パネル */}
       <div className="bg-[#001f3f] rounded-[40px] p-6 md:p-8 text-white mb-8 shadow-xl relative overflow-hidden">
         <div className="relative z-10 flex justify-between items-center">
           <div className="flex-1">
@@ -263,7 +261,6 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
             <div className="flex gap-6 items-center">
               <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">CURRENT</p><p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p></div>
               <div className="h-8 w-[1px] bg-white/10"></div>
-              {/* OBIを消して一般/キッズに変更 */}
               <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">{isGeneral ? '一般' : 'キッズ'}</p><p className="text-xl font-black">{targetBelt}</p></div>
             </div>
           </div>
@@ -278,7 +275,6 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
         </div>
       </div>
 
-      {/* 帯選択とPreviewボタン */}
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex items-center justify-between gap-4">
           <div className="flex-1 flex gap-2 overflow-x-auto no-scrollbar pb-1">
@@ -312,4 +308,22 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
                   const newGrade = g;
                   setCriteria(prev => prev.map(item => item.id === c.id ? { ...item, grade: newGrade } : item));
                   supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: newGrade }, { onConflict: 'student_id,criterion_id' }).then();
-                }} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg' : 'bg-gray-50 text-gray-300 hover:bg-gray-1
+                }} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg' : 'bg-gray-50 text-gray-300 hover:bg-gray-100'}`}>{g}</button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showEdit && <EditStudentModal student={student} allBranchList={allBranchList} onClose={() => setShowEdit(false)} onRefresh={onRefresh} />}
+      {showPreview && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-[#001f3f]/95 backdrop-blur-md">
+          <div className="relative w-full max-w-md h-[90vh] overflow-hidden rounded-[50px] bg-white shadow-2xl">
+            <button onClick={() => setShowPreview(false)} className="absolute top-6 right-6 z-[120] w-10 h-10 bg-black text-white rounded-full font-black">✕</button>
+            <div className="h-full overflow-y-auto"><StudentDashboard profile={student} /></div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
