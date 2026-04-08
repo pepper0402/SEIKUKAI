@@ -24,7 +24,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   // 個別追加用
   const [showAddForm, setShowAddForm] = useState(false)
   const [newStudent, setNewStudent] = useState({ name: '', login_email: '', branch: '池田', birthday: '', kyu: '無級' })
-  const [isNewBranch, setIsNewBranch] = useState(false) // 新規支部入力モード
+  const [isNewBranch, setIsNewBranch] = useState(false) 
 
   const isMaster = adminProfile?.login_email === 'mr.pepper0402@gmail.com'
 
@@ -80,10 +80,10 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     if (!error) setStudents(prev => prev.map(s => s.id === studentId ? { ...s, branch: newBranch } : s))
   }
 
-  // --- 審査基準CSVアップロード（上書きモード） ---
+  // --- 審査基準CSVアップロード（全件削除して上書き） ---
   const handleCriteriaCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
-    if (!window.confirm('⚠️ 注意：現在の全審査項目を削除し、このCSVの内容に【上書き】します。よろしいですか？')) {
+    if (!window.confirm('⚠️ 注意：現在の全審査項目を削除し、このCSVの内容に【完全に書き換え】ます。よろしいですか？')) {
       e.target.value = ''; return;
     }
     
@@ -96,20 +96,25 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         const updates = lines.slice(1).map(line => {
           const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
           if (!v[0] || !v[2]) return null 
-          return { dan: v[0], examination_type: v[1] || '基本', examination_content: v[2], video_url: v[3] || '' }
+          return { 
+            dan: v[0], 
+            examination_type: v[1] || '基本', 
+            examination_content: v[2], 
+            video_url: v[3] || '' // 複数URLはカンマやスペース区切りで文字列として保存
+          }
         }).filter(Boolean) as any[]
 
         if (updates.length > 0) {
-          // 1. 全削除
-          const { error: delError } = await supabase.from('criteria').delete().neq('id', 0) // 全件削除
+          // 既存データを全削除（IDが0以外＝実質すべて）
+          const { error: delError } = await supabase.from('criteria').delete().neq('id', 0)
           if (delError) throw delError
 
-          // 2. 新規インサート
+          // 新しいデータを挿入
           const { error: insError } = await supabase.from('criteria').insert(updates)
           if (insError) throw insError
 
           alert(`✅ 審査項目を ${updates.length} 件で上書き更新しました。`)
-          window.location.reload();
+          window.location.reload(); 
         }
       } catch (err: any) { alert('CSVエラー: ' + err.message) } finally { setIsUploading(false); e.target.value = '' }
     }
@@ -182,7 +187,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
                   <button type="button" onClick={() => setIsNewBranch(!isNewBranch)} className="text-[8px] text-orange-400 font-bold underline">{isNewBranch ? 'リストから選ぶ' : '新しい支部を追加'}</button>
                 </div>
                 {isNewBranch ? (
-                  <input type="text" placeholder="新しい支部名を入力" required className="w-full bg-orange-500/20 border border-orange-500/30 rounded-lg px-3 py-1.5 text-xs outline-none text-white" value={newStudent.branch} onChange={e => setNewStudent({...newStudent, branch: e.target.value})} />
+                  <input type="text" placeholder="新しい支部名を入力" required className="w-full bg-orange-500/20 border border-orange-500/30 rounded-lg px-3 py-1.5 text-xs outline-none text-white placeholder:text-white/40" value={newStudent.branch} onChange={e => setNewStudent({...newStudent, branch: e.target.value})} />
                 ) : (
                   <select className="w-full bg-white/10 rounded-lg px-2 py-1.5 text-xs outline-none text-white" value={newStudent.branch} onChange={e => setNewStudent({...newStudent, branch: e.target.value})}>
                     {allBranchList.map(b => <option key={b} value={b} className="text-black">{b}</option>)}
@@ -194,7 +199,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           )}
 
           <div className="space-y-2">
-            <input type="text" placeholder="名前、級、支部で検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none focus:bg-white focus:text-[#001f3f]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            <input type="text" placeholder="検索..." className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none focus:bg-white focus:text-[#001f3f]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             <select className="w-full bg-[#001f3f] border border-white/20 rounded-xl px-4 py-2 text-[10px] font-black text-white outline-none cursor-pointer" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
               <option value="すべて">すべての支部</option>
               {allBranchList.map(b => <option key={b} value={b}>{b}支部</option>)}
@@ -220,7 +225,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
               </div>
             </div>
           ))}
-          {filteredStudents.length === 0 && <div className="p-10 text-center text-gray-300 text-[10px] font-black uppercase italic tracking-widest">No members found</div>}
         </div>
       </div>
 
@@ -287,18 +291,11 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
     await supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: criterionId, grade: newGrade }, { onConflict: 'student_id,criterion_id' });
   }
 
-  const handleDelete = async () => {
-    if (window.confirm(`【退会処理】${student.name} さんの全てのデータを削除しますか？`)) {
-      const { error } = await supabase.from('profiles').delete().eq('id', student.id)
-      if (!error) onRefresh();
-    }
-  }
-
   return (
     <div className="max-w-2xl mx-auto pb-20">
       <div className="bg-[#001f3f] rounded-[30px] md:rounded-[40px] p-6 md:p-8 text-white mb-6 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-4 opacity-20 pointer-events-none">
-           <p className="text-8xl font-black italic tracking-tighter uppercase">SEIKUKAI</p>
+        <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+           <p className="text-8xl font-black italic tracking-tighter uppercase leading-none">SEIKUKAI</p>
         </div>
         <div className="relative z-10">
           <div className="flex flex-col md:flex-row justify-between items-start gap-4">
@@ -308,8 +305,8 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
                 <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${isGeneral ? 'bg-purple-600' : 'bg-orange-500'}`}>{isGeneral ? '一般部' : '少年部'}</span>
               </div>
               <div className="flex gap-4">
-                <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">Current Kyu</p><p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p></div>
-                <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">Current Belt</p><p className="text-xl font-black">{targetBelt}</p></div>
+                <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">現在の級</p><p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p></div>
+                <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">対象の帯</p><p className="text-xl font-black">{targetBelt}</p></div>
               </div>
             </div>
             <div className="text-left md:text-right">
@@ -325,21 +322,26 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
            <h3 className="text-[9px] font-black text-gray-400 uppercase mb-2">🥋 昇級・支部の変更</h3>
            <div className="space-y-2">
               <select value={student.kyu || '無級'} onChange={(e) => {
-                 if (window.confirm(`${e.target.value}に更新しますか？`)) {
+                 if (window.confirm(`${e.target.value}に更新します会？`)) {
                    supabase.from('profiles').update({ kyu: e.target.value }).eq('id', student.id).then(() => onRefresh());
                  }
-              }} className="w-full bg-gray-50 border-none rounded-xl px-3 py-2 text-xs font-black outline-none appearance-none">
+              }} className="w-full bg-gray-50 border-none rounded-xl px-3 py-2 text-xs font-black outline-none appearance-none cursor-pointer">
                 {allKyuList.map(k => <option key={k} value={k}>{k}</option>)}
               </select>
-              <select value={(student as any).branch} onChange={(e) => onBranchUpdate(student.id, e.target.value)} className="w-full bg-gray-50 border-none rounded-xl px-3 py-2 text-xs font-black outline-none appearance-none">
+              <select value={(student as any).branch} onChange={(e) => onBranchUpdate(student.id, e.target.value)} className="w-full bg-gray-50 border-none rounded-xl px-3 py-2 text-xs font-black outline-none appearance-none cursor-pointer">
                 {allBranchList.map(b => <option key={b} value={b}>{b}支部</option>)}
               </select>
            </div>
         </div>
-        <div className="bg-white p-5 rounded-[25px] shadow-sm border border-gray-100 flex flex-col justify-between">
-           <h3 className="text-[9px] font-black text-gray-400 uppercase mb-2">⚙️ アクション</h3>
-           <button onClick={handleDelete} className="w-full py-3 bg-red-50 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all">
-             生徒データの完全削除
+        <div className="bg-white p-5 rounded-[25px] shadow-sm border border-gray-100 flex flex-col justify-center">
+           <h3 className="text-[9px] font-black text-gray-400 uppercase mb-2">⚙️ 管理</h3>
+           <button onClick={async () => {
+             if (window.confirm(`${student.name}さんのデータを完全に削除しますか？`)) {
+               const { error } = await supabase.from('profiles').delete().eq('id', student.id)
+               if (!error) onRefresh();
+             }
+           }} className="w-full py-3 bg-red-50 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all">
+             退会処理（削除）
            </button>
         </div>
       </div>
@@ -359,7 +361,25 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
             <div className="flex flex-col mb-4">
               <span className="text-[9px] font-black text-gray-300 uppercase mb-1">{c.examination_type}</span>
               <p className="text-sm font-bold text-[#001f3f] leading-snug">{c.examination_content}</p>
+              
+              {/* 動画URLが複数ある場合、ボタンを分けるロジック */}
+              {c.video_url && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {c.video_url.split(/[\s,]+/).filter((url: string) => url.startsWith('http')).map((url: string, index: number) => (
+                    <a 
+                      key={index}
+                      href={url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-[9px] bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg font-black uppercase tracking-wider hover:bg-orange-600 hover:text-white transition-all border border-orange-200"
+                    >
+                      MOVIE {c.video_url.split(/[\s,]+/).filter((u:string) => u.startsWith('http')).length > 1 ? index + 1 : ''} 📺
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
+            
             <div className="grid grid-cols-4 gap-2">
               {['A', 'B', 'C', 'D'].map(g => (
                 <button key={g} onClick={() => updateGrade(c.id, g)} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-300 active:bg-gray-100'}`}>{g}</button>
