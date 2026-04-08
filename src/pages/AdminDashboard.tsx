@@ -4,7 +4,6 @@ import { supabase, Profile } from '../lib/supabase'
 // --- ユーティリティ: 年齢計算 ---
 const calculateAge = (birthday: string) => {
   if (!birthday) return 0;
-  // 日付形式を統一 (yyyy/mm/dd -> yyyy-mm-dd)
   const normalizedBirthday = birthday.replace(/\//g, '-');
   const birthDate = new Date(normalizedBirthday);
   if (isNaN(birthDate.getTime())) return 0;
@@ -15,7 +14,7 @@ const calculateAge = (birthday: string) => {
   return age;
 };
 
-// --- CSVパース用のユーティリティ (引用符内のカンマ/改行に対応) ---
+// --- CSVパース用のユーティリティ (複雑な引用符や改行に対応) ---
 const parseCsvLine = (text: string): string[] => {
   const result: string[] = [];
   let cell = '';
@@ -24,24 +23,16 @@ const parseCsvLine = (text: string): string[] => {
     const char = text[i];
     const nextChar = text[i + 1];
     if (inQuotes) {
-      if (char === '"' && nextChar === '"') { // エスケープされた引用符
-        cell += '"'; i++;
-      } else if (char === '"') { // 引用符の終わり
-        inQuotes = false;
-      } else {
-        cell += char;
-      }
+      if (char === '"' && nextChar === '"') { cell += '"'; i++; }
+      else if (char === '"') { inQuotes = false; }
+      else { cell += char; }
     } else {
-      if (char === '"') { // 引用符の始まり
-        inQuotes = true;
-      } else if (char === ',') { // セルの区切り
-        result.push(cell.trim()); cell = '';
-      } else {
-        cell += char;
-      }
+      if (char === '"') { inQuotes = true; }
+      else if (char === ',') { result.push(cell.trim()); cell = ''; }
+      else { cell += char; }
     }
   }
-  result.push(cell.trim()); // 最後のセルを追加
+  result.push(cell.trim());
   return result;
 };
 
@@ -75,18 +66,15 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     if (window.innerWidth < 768) setIsSidebarOpen(false)
   }
 
-  // --- 支部リストの動的取得 ---
   const allBranchList = useMemo(() => {
     const branches = students.map(s => (s as any).branch).filter(Boolean)
     const uniqueBranches = Array.from(new Set(['池田', '川西', '宝塚', ...branches]))
     return uniqueBranches.sort()
   }, [students])
 
-  // --- 個別追加実行 ---
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newStudent.name || !newStudent.login_email) return alert('名前とメールは必須です')
-    
     setIsUploading(true)
     const { error } = await supabase.from('profiles').upsert([{
       ...newStudent,
@@ -99,68 +87,45 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     } else {
       alert(`「${newStudent.name}」を追加しました。\n初期パスワード: Seikukai2026`);
       setNewStudent({ name: '', login_email: '', branch: '池田', birthday: '', kyu: '無級' });
-      setShowAddForm(false);
-      setIsNewBranch(false);
-      loadStudents();
+      setShowAddForm(false); setIsNewBranch(false); loadStudents();
     }
     setIsUploading(false)
   }
 
-  // --- 支部更新 ---
   const handleBranchUpdate = async (studentId: string, newBranch: string) => {
     const { error } = await supabase.from('profiles').update({ branch: newBranch }).eq('id', studentId)
     if (!error) setStudents(prev => prev.map(s => s.id === studentId ? { ...s, branch: newBranch } : s))
   }
 
-  // --- 審査基準CSVアップロード（全件削除して上書き） ---
   const handleCriteriaCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
-    if (!window.confirm('⚠️ 注意：現在の全審査項目を削除し、このCSVの内容に【完全に書き換え】ます。よろしいですか？')) {
+    if (!window.confirm('⚠️ 注意：現在の全審査項目を削除し、このCSVの内容に【完全に上書き】します。よろしいですか？')) {
       e.target.value = ''; return;
     }
-    
     setIsUploading(true)
     const reader = new FileReader()
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string
-        // 改行コードで分割。引用符内の改行はparseCsvLineで吸収
         const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
-        
         const updates = lines.slice(1).map(line => {
-          // 高機能なパース関数を使用
           const v = parseCsvLine(line);
-          
           if (!v[0] || !v[2]) return null 
-          return { 
-            dan: v[0], 
-            examination_type: v[1] || '基本', 
-            examination_content: v[2], 
-            // 複数URLは文字列としてそのまま保存 (表示時に分割)
-            video_url: v[3] || '' 
-          }
+          return { dan: v[0], examination_type: v[1] || '基本', examination_content: v[2], video_url: v[3] || '' }
         }).filter(Boolean) as any[]
 
         if (updates.length > 0) {
-          // 既存データを全削除（IDが0以外＝実質すべて）
-          const { error: delError } = await supabase.from('criteria').delete().neq('id', 0)
-          if (delError) throw delError
-
-          // 新しいデータを挿入
+          await supabase.from('criteria').delete().neq('id', 0)
           const { error: insError } = await supabase.from('criteria').insert(updates)
           if (insError) throw insError
-
-          alert(`✅ 審査項目を ${updates.length} 件で上書き更新しました。`)
+          alert(`✅ 審査項目を ${updates.length} 件で更新しました。`)
           window.location.reload(); 
-        } else {
-          throw new Error("有効なデータが見つかりませんでした。")
         }
       } catch (err: any) { alert('CSVエラー: ' + err.message) } finally { setIsUploading(false); e.target.value = '' }
     }
     reader.readAsText(file)
   }
 
-  // --- 名簿CSVアップロード ---
   const handleProfileCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
     setIsUploading(true)
@@ -170,7 +135,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         const text = event.target?.result as string
         const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
         const updates = lines.slice(1).map(line => {
-          // 名簿側も高機能パースを使用
           const v = parseCsvLine(line);
           if (!v[8]) return null
           return { name: (v[1] || '') + (v[2] || ''), login_email: v[8].toLowerCase(), kyu: v[7] || '無級', branch: v[0] || '未設定', birthday: v[6] || '', is_admin: false }
@@ -191,7 +155,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
   return (
     <div className="flex h-screen bg-[#f0f2f5] overflow-hidden font-sans text-[#001f3f] relative">
-      
       {!isSidebarOpen && (
         <button onClick={() => setIsSidebarOpen(true)} className="fixed top-4 left-4 z-50 bg-[#001f3f] text-white p-3 rounded-full shadow-2xl md:hidden">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
@@ -204,7 +167,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
             <h1 className="text-lg font-black italic tracking-tighter uppercase leading-none">SEIKUKAI <span className="text-orange-400">ADMIN</span></h1>
             <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase hover:bg-red-700">Logout</button>
           </div>
-          
           <div className="grid grid-cols-1 gap-2 mb-4">
             <button onClick={() => setShowAddForm(!showAddForm)} className="w-full py-2 bg-green-600 rounded-xl text-[9px] font-black border border-green-500/20 hover:bg-green-700 transition-all">
               {showAddForm ? '× 閉じる' : '＋ 個別追加'}
@@ -220,7 +182,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
               <input type="text" placeholder="氏名" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} />
               <input type="email" placeholder="メール" required className="w-full bg-white/10 rounded-lg px-3 py-1.5 text-xs outline-none focus:bg-white focus:text-[#001f3f]" value={newStudent.login_email} onChange={e => setNewStudent({...newStudent, login_email: e.target.value})} />
               <input type="date" className="w-full bg-white/10 rounded-lg px-2 py-1.5 text-xs outline-none" value={newStudent.birthday} onChange={e => setNewStudent({...newStudent, birthday: e.target.value})} />
-              
               <div className="space-y-1">
                 <div className="flex justify-between items-center px-1">
                   <span className="text-[8px] font-bold text-white/50 uppercase">支部設定</span>
@@ -246,7 +207,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
             </select>
           </div>
         </div>
-        
         <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
           {filteredStudents.map(s => (
             <div key={s.id} className={`group w-full p-5 border-l-4 transition-all ${selectedStudent?.id === s.id ? 'bg-orange-50 border-orange-500 shadow-inner' : 'border-transparent hover:bg-gray-50'}`}>
@@ -278,7 +238,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           </div>
         )}
       </div>
-
       {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setIsSidebarOpen(false)} />}
     </div>
   )
@@ -288,7 +247,6 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
   const allKyuList = ['無級', '準10級', '10級', '準9級', '9級', '準8級', '8級', '準7級', '7級', '準6級', '6級', '準5級', '5級', '準4級', '4級', '準3級', '3級', '準2級', '2級', '準1級', '1級', '初段', '弍段', '参段', '四段', '五段']
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
   const isGeneral = age >= 15;
-
   const belts = useMemo(() => {
     const base = ['白帯', '黄帯', '青帯', '橙帯', '紫帯', '緑帯', '茶帯', '黒帯'];
     return isGeneral ? base.filter(b => b !== '橙帯') : base.filter(b => b !== '紫帯');
@@ -307,7 +265,6 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
 
   const targetBelt = getAutoTargetBelt(student.kyu, isGeneral);
   const dbBeltName = (targetBelt === '橙帯' || targetBelt === '紫帯') ? '橙帯/紫帯' : targetBelt;
-
   const [viewBelt, setViewBelt] = useState(dbBeltName)
   const [criteria, setCriteria] = useState<any[]>([])
 
@@ -376,9 +333,8 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
         <div className="bg-white p-5 rounded-[25px] shadow-sm border border-gray-100 flex flex-col justify-center transition-all hover:border-red-100 group">
            <h3 className="text-[9px] font-black text-gray-400 uppercase mb-2 group-hover:text-red-400 transition-colors">⚙️ 管理</h3>
            <button onClick={async () => {
-             if (window.confirm(`⚠️【重要】${student.name}さんのデータを完全に削除し、退会処理を行います。よろしいですか？`)) {
-               const { error } = await supabase.from('profiles').delete().eq('id', student.id)
-               if (!error) onRefresh();
+             if (window.confirm(`退会処理を行います。よろしいですか？`)) {
+               await supabase.from('profiles').delete().eq('id', student.id); onRefresh();
              }
            }} className="w-full py-3 bg-red-50 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all shadow-sm active:scale-95">
              退会処理（削除）
@@ -402,26 +358,20 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
               <span className="text-[9px] font-black text-gray-300 uppercase mb-1 tracking-wider">{c.examination_type}</span>
               <p className="text-sm font-bold text-[#001f3f] leading-snug">{c.examination_content}</p>
               
-              {/* 動画URL表示セクション (修正済み) */}
+              {/* 動画URL展開セクション: カンマ,スペース,改行すべてに対応 */}
               {c.video_url && (
                 <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
-                  {/* カンマ、スペース、改行で区切る */}
-                  {c.video_url.split(/[\s,\n]+/).filter((url: string) => url.startsWith('http')).map((url: string, index: number) => (
-                    <a 
-                      key={index}
-                      href={url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      title={`お手本動画 ${index + 1} を開く`}
-                      className="text-lg bg-orange-50 text-orange-600 px-3 py-1.5 rounded-xl hover:bg-orange-600 hover:text-white transition-all border border-orange-100 shadow-sm active:scale-90"
-                    >
-                      ▶️
-                    </a>
+                  {c.video_url.split(/[\s,\n]+/)
+                    .map((url: string) => url.trim().replace(/^"|"$/g, ''))
+                    .filter((url: string) => url.startsWith('http'))
+                    .map((url: string, index: number) => (
+                      <a key={index} href={url} target="_blank" rel="noopener noreferrer" className="text-lg bg-orange-50 text-orange-600 px-3 py-1.5 rounded-xl hover:bg-orange-600 hover:text-white transition-all border border-orange-100 shadow-sm active:scale-90">
+                        ▶️
+                      </a>
                   ))}
                 </div>
               )}
             </div>
-            
             <div className="grid grid-cols-4 gap-2">
               {['A', 'B', 'C', 'D'].map(g => (
                 <button key={g} onClick={() => updateGrade(c.id, g)} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-300 active:bg-gray-100 hover:bg-gray-100'}`}>{g}</button>
@@ -429,9 +379,6 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
             </div>
           </div>
         ))}
-        {criteria.length === 0 && (
-          <div className="p-10 text-center text-gray-300 text-[10px] font-black uppercase italic tracking-widest border-2 border-dashed border-gray-100 rounded-[30px]">No criteria found for {viewBelt === '橙帯/紫帯' ? targetBelt : viewBelt}</div>
-        )}
       </div>
     </div>
   )
