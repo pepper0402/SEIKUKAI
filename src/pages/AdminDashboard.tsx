@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase, Profile } from '../lib/supabase'
-import StudentDashboard from './StudentDashboard' // プレビュー用
+import StudentDashboard from './StudentDashboard'
 
 const allKyuList = [
   '無級', '準10級', '10級', '準9級', '9級', '準8級', '8級', '準7級', '7級', 
@@ -21,39 +21,36 @@ export default function AdminDashboard() {
 
   async function fetchData() {
     setLoading(true)
+    // 生徒一覧を取得
     const { data: p } = await supabase.from('profiles').select('*').eq('role', 'student').order('name')
-    const { data: c } = await supabase.from('criteria').select('*').order('id')
+    // 審査項目をすべて取得
+    const { data: c } = await supabase.from('criteria').select('*').order('id', { ascending: true })
+    // 評価データをすべて取得
     const { data: e } = await supabase.from('evaluations').select('*')
+    
     setStudents(p || [])
     setCriteria(c || [])
     setEvaluations(e || [])
     setLoading(false)
   }
 
-  // 生徒情報の更新（名前・級）
   const updateStudentInfo = async (id: string, updates: Partial<Profile>) => {
     const { error } = await supabase.from('profiles').update(updates).eq('id', id)
     if (error) alert('更新エラー: ' + error.message)
     else fetchData()
   }
 
-  // パスワードリセット
-  const resetPassword = async (email: string) => {
+  const resetPassword = async (student: Profile) => {
     const newPass = Math.random().toString(36).slice(-8);
-    if (!window.confirm(`パスワードを「${newPass}」に変更しますか？（メモしてください）`)) return;
+    if (!window.confirm(`「${student.name}」さんのパスワードを「${newPass}」に変更しますか？（必ずメモしてください）`)) return;
     
-    // 注: 本来はRPCやEdge Functions推奨ですが、簡易的にAuth APIを使用
-    const { error } = await supabase.auth.admin.updateUserById(
-      students.find(s => s.email === email)?.id || '',
-      { password: newPass }
-    )
-    if (error) alert('エラー: 管理者権限が必要です\n' + error.message)
-    else alert('パスワードを更新しました')
+    const { error } = await supabase.auth.admin.updateUserById(student.id, { password: newPass })
+    if (error) alert('エラー: 管理者権限（Service Role）が必要です。設定を確認してください。\n' + error.message)
+    else alert('パスワードを更新しました。')
   }
 
-  // 退会処理
   const deleteStudent = async (id: string) => {
-    if (!window.confirm('本当にこの生徒を削除しますか？この操作は取り消せません。')) return
+    if (!window.confirm('本当にこの生徒を退会（削除）させますか？この操作は取り消せません。')) return
     const { error } = await supabase.from('profiles').delete().eq('id', id)
     if (error) alert('削除エラー: ' + error.message)
     else fetchData()
@@ -69,72 +66,68 @@ export default function AdminDashboard() {
     } else {
       await supabase.from('evaluations').delete().match({ student_id: studentId, criterion_id: criterionId })
     }
-    fetchData()
+    // 即座に反映させるためにローカルのステートを更新（fetchDataを呼ぶとチラつくため）
+    const { data: e } = await supabase.from('evaluations').select('*')
+    setEvaluations(e || [])
   }
 
-  if (loading) return <div className="p-10 text-center font-bold">データを読込中...</div>
+  if (loading) return <div className="p-10 text-center font-black animate-pulse text-gray-400">LOADING DATA...</div>
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 md:p-8 text-gray-800">
+    <div className="min-h-screen bg-[#f0f2f5] p-4 md:p-8 text-[#001f3f]">
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-2xl font-black italic">誠空会 管理パネル</h1>
-          <button onClick={() => supabase.auth.signOut()} className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold">ログアウト</button>
+        <div className="flex justify-between items-center mb-10">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.4em] opacity-40">Seikukai Admin</p>
+            <h1 className="text-3xl font-black italic tracking-tighter">誠空会 管理パネル</h1>
+          </div>
+          <button onClick={() => supabase.auth.signOut()} className="bg-red-600 text-white px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-red-700 transition-all">Logout</button>
         </div>
 
-        {students.map(student => (
-          <div key={student.id} className="bg-white rounded-3xl shadow-sm mb-8 overflow-hidden border border-gray-200">
-            {/* 生徒情報ヘッダー */}
-            <div className="bg-gray-50 p-6 border-b flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <input 
-                  type="text" 
-                  className="text-xl font-black bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none px-1"
-                  defaultValue={student.name}
-                  onBlur={(e) => updateStudentInfo(student.id, { name: e.target.value })}
-                />
-                <select 
-                  className="bg-white border rounded px-2 py-1 text-sm font-bold"
-                  value={student.kyu || '無級'}
-                  onChange={(e) => updateStudentInfo(student.id, { kyu: e.target.value })}
-                >
-                  {allKyuList.map(k => <option key={k} value={k}>{k}</option>)}
-                </select>
+        <div className="space-y-10">
+          {students.map(student => (
+            <div key={student.id} className="bg-white rounded-[40px] shadow-xl shadow-gray-200/50 overflow-hidden border border-white">
+              {/* 生徒情報ヘッダー */}
+              <div className="bg-gray-50/50 p-6 md:p-8 border-b border-gray-100 flex flex-wrap items-center justify-between gap-6">
+                <div className="flex items-center gap-6">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest mb-1">Student Name</span>
+                    <input 
+                      type="text" 
+                      className="text-2xl font-black bg-transparent border-b-2 border-transparent hover:border-gray-200 focus:border-[#001f3f] outline-none transition-all"
+                      defaultValue={student.name}
+                      onBlur={(e) => updateStudentInfo(student.id, { name: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest mb-1">Rank</span>
+                    <select 
+                      className="bg-white border-2 border-gray-100 rounded-xl px-3 py-1.5 text-sm font-black focus:border-[#001f3f] outline-none shadow-sm"
+                      value={student.kyu || '無級'}
+                      onChange={(e) => updateStudentInfo(student.id, { kyu: e.target.value })}
+                    >
+                      {allKyuList.map(k => <option key={k} value={k}>{k}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button onClick={() => setPreviewStudent(student)} className="px-4 py-2 bg-[#001f3f] text-white rounded-xl text-[10px] font-black uppercase tracking-tighter hover:scale-105 transition-all shadow-md">プレビュー</button>
+                  <button onClick={() => resetPassword(student)} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-[10px] font-black uppercase tracking-tighter hover:bg-gray-200 transition-all">PWリセット</button>
+                  <button onClick={() => deleteStudent(student.id)} className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-100 transition-all">退会</button>
+                </div>
               </div>
 
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => setPreviewStudent(student)}
-                  className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-100"
-                >
-                  表示プレビュー
-                </button>
-                <button 
-                  onClick={() => resetPassword(student.email || '')}
-                  className="bg-gray-100 text-gray-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-gray-200"
-                >
-                  PWリセット
-                </button>
-                <button 
-                  onClick={() => deleteStudent(student.id)}
-                  className="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-red-100"
-                >
-                  退会
-                </button>
-              </div>
-            </div>
-
-            {/* 審査項目リスト */}
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {criteria
-                  .filter(c => c.dan === (student.kyu?.includes('段') ? '黒帯' : '級位')) // 級か段かでフィルタ（DB構造に合わせ調整）
-                  .map(criterion => {
+              {/* 審査項目リスト：フィルタを外して全表示 */}
+              <div className="p-6 md:p-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {criteria.map(criterion => {
                     const evaluation = evaluations.find(e => e.student_id === student.id && e.criterion_id === criterion.id);
                     return (
-                      <div key={criterion.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                      <div key={criterion.id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-[24px] border border-gray-100 hover:border-gray-300 transition-all">
+                        {/* 評価選択（左） */}
                         <select
-                          className={`w-12 h-12 rounded-xl font-black text-center appearance-none border-2 transition-all ${
+                          className={`shrink-0 w-12 h-12 rounded-[18px] font-black text-center appearance-none border-2 transition-all cursor-pointer ${
                             evaluation?.grade === 'A' ? 'bg-orange-500 border-orange-600 text-white' :
                             evaluation?.grade === 'B' ? 'bg-slate-800 border-black text-white' :
                             evaluation?.grade === 'C' ? 'bg-gray-400 border-gray-500 text-white' :
@@ -149,17 +142,18 @@ export default function AdminDashboard() {
                           <option value="C">C</option>
                         </select>
                         
+                        {/* 内容（中央） */}
                         <div className="flex-1 min-w-0">
-                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">{criterion.examination_type}</p>
-                          <p className="text-sm font-bold text-gray-700 truncate">{criterion.examination_content}</p>
+                          <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">{criterion.examination_type || '審査'}</p>
+                          <p className="text-[13px] font-bold text-gray-700 leading-tight line-clamp-2">{criterion.examination_content}</p>
                         </div>
 
-                        {/* 動画ボタンを右端に配置 */}
+                        {/* 動画ボタン（右端） */}
                         {criterion.video_url && (
-                          <div className="flex gap-1">
+                          <div className="shrink-0 flex gap-1">
                             {criterion.video_url.split(/[,\n ]+/).filter((url:string) => url.startsWith('http')).map((url:string, i:number) => (
-                              <a key={i} href={url} target="_blank" rel="noreferrer" className="w-8 h-8 bg-red-100 text-red-600 rounded-lg flex items-center justify-center text-xs">
-                                ▶️
+                              <a key={i} href={url} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white text-red-500 rounded-lg flex items-center justify-center border border-red-50 hover:bg-red-500 hover:text-white transition-all shadow-sm">
+                                <span className="text-xs">▶️</span>
                               </a>
                             ))}
                           </div>
@@ -167,23 +161,26 @@ export default function AdminDashboard() {
                       </div>
                     )
                   })}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
       {/* プレビューモーダル */}
       {previewStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-md h-[90vh] overflow-y-auto rounded-[40px] bg-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#001f3f]/90 backdrop-blur-md transition-all">
+          <div className="relative w-full max-w-md h-[90vh] overflow-hidden rounded-[50px] bg-white shadow-2xl border-8 border-white">
             <button 
               onClick={() => setPreviewStudent(null)}
-              className="absolute top-4 right-4 z-[60] w-10 h-10 bg-black/50 text-white rounded-full font-bold"
+              className="absolute top-6 right-6 z-[70] w-12 h-12 bg-black/80 text-white rounded-full font-black text-xl flex items-center justify-center shadow-xl hover:scale-110 active:scale-95 transition-all"
             >
               ✕
             </button>
-            <StudentDashboard profile={previewStudent} />
+            <div className="h-full overflow-y-auto">
+              <StudentDashboard profile={previewStudent} />
+            </div>
           </div>
         </div>
       )}
