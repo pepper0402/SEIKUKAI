@@ -11,7 +11,7 @@ const allKyuList = [
 
 const calculateAge = (birthday: string) => {
   if (!birthday) return 0;
-  const normalized = birthday.replace(/\//g, '-');
+  const normalized = birthday.replace(/\//g, '-').split('T')[0];
   const birthDate = new Date(normalized);
   if (isNaN(birthDate.getTime())) return 0;
   const today = new Date();
@@ -21,7 +21,6 @@ const calculateAge = (birthday: string) => {
   return age;
 };
 
-// 帯の色を取得するユーティリティ
 const getBeltColorClass = (beltName: string) => {
   switch (beltName) {
     case '白帯': return 'bg-gray-100 text-gray-600 border-gray-200';
@@ -43,8 +42,6 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   const [branchFilter, setBranchFilter] = useState('すべて')
   const [sortBy, setSortBy] = useState<'name' | 'kyu'>('name')
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [newStudent, setNewStudent] = useState({ name: '', login_email: '', branch: '池田', birthday: '', kyu: '無級' })
 
   const loadStudents = useCallback(async () => {
     const { data } = await supabase.from('profiles').select('*').eq('is_admin', false)
@@ -119,13 +116,12 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         </div>
       </div>
 
-      {/* メインパネル */}
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-10 pt-16 md:pt-10">
         {selectedStudent ? (
           <EvaluationPanel key={selectedStudent.id} student={selectedStudent} onRefresh={() => { loadStudents(); setSelectedStudent(null); }} allBranchList={allBranchList} />
         ) : (
           <div className="h-full flex flex-col items-center justify-center opacity-20 grayscale">
-             <h2 className="font-black text-4xl italic tracking-tighter">SEIKUKAI</h2>
+             <h2 className="font-black text-4xl italic tracking-tighter uppercase">SEIKUKAI</h2>
           </div>
         )}
       </div>
@@ -134,9 +130,17 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 }
 
 function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
-  // 日付が YYYY/MM/DD の場合、input[type=date]用に YYYY-MM-DD へ変換
-  const formattedBirthday = student.birthday ? student.birthday.replace(/\//g, '-') : '';
-  const [formData, setFormData] = useState({ ...student, birthday: formattedBirthday });
+  // 誕生日の読み込みを確実にする
+  const getInitialBirthday = () => {
+    if (!student.birthday) return '';
+    // YYYY/MM/DD や ISO形式を YYYY-MM-DD に統一
+    return student.birthday.split('T')[0].replace(/\//g, '-');
+  };
+
+  const [formData, setFormData] = useState({ 
+    ...student, 
+    birthday: getInitialBirthday() 
+  });
   const [loading, setLoading] = useState(false);
 
   const handleUpdate = async (e: React.FormEvent) => {
@@ -151,6 +155,15 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
     
     if (error) alert(error.message);
     else { alert('更新しました'); onRefresh(); onClose(); }
+    setLoading(false);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('退会処理を行いますか？この生徒の全データが削除されます。')) return;
+    setLoading(true);
+    const { error } = await supabase.from('profiles').delete().eq('id', student.id);
+    if (error) alert(error.message);
+    else { alert('退会処理を完了しました'); onRefresh(); onClose(); }
     setLoading(false);
   };
 
@@ -182,9 +195,10 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
             <label className="text-[9px] font-black text-gray-400 uppercase ml-2">生年月日</label>
             <input type="date" className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm outline-none font-bold" value={formData.birthday} onChange={e => setFormData({...formData, birthday: e.target.value})} />
           </div>
-          <button type="submit" disabled={loading} className="w-full py-4 bg-[#001f3f] text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg transition-all active:scale-95">
-            {loading ? '更新中...' : '情報を保存する'}
-          </button>
+          <div className="pt-2 space-y-2">
+            <button type="submit" disabled={loading} className="w-full py-4 bg-[#001f3f] text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all">保存する</button>
+            <button type="button" onClick={handleDelete} className="w-full py-3 text-red-500 font-black text-[10px] uppercase tracking-widest hover:bg-red-50 rounded-2xl transition-all">退会させる</button>
+          </div>
         </form>
       </div>
     </div>
@@ -241,23 +255,18 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
 
   return (
     <div className="max-w-2xl mx-auto pb-20">
+      {/* ヘッダー情報パネル */}
       <div className="bg-[#001f3f] rounded-[40px] p-6 md:p-8 text-white mb-8 shadow-xl relative overflow-hidden">
         <div className="relative z-10 flex justify-between items-center">
           <div className="flex-1">
             <h2 className="text-3xl font-black mb-4 leading-tight">{student.name}</h2>
-            <div className="flex gap-4 items-center">
+            <div className="flex gap-6 items-center">
               <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">CURRENT</p><p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p></div>
               <div className="h-8 w-[1px] bg-white/10"></div>
-              <div>
-                <p className="text-[10px] font-black text-white/40 uppercase mb-1">OBI</p>
-                <div className="flex items-center gap-2">
-                  <p className="text-xl font-black">{targetBelt}</p>
-                  <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${isGeneral ? 'bg-purple-600' : 'bg-orange-500'}`}>{isGeneral ? '一般部' : '少年部'}</span>
-                </div>
-              </div>
+              {/* OBIを消して一般/キッズに変更 */}
+              <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">{isGeneral ? '一般' : 'キッズ'}</p><p className="text-xl font-black">{targetBelt}</p></div>
             </div>
           </div>
-          {/* 見切れ防止のため min-w を設定 */}
           <div className="text-right min-w-[120px]">
             <p className="text-[10px] font-black text-white/40 mb-1 uppercase tracking-widest">SCORE</p>
             <p className={`text-6xl md:text-7xl font-black leading-none ${isScoreReady ? 'text-green-400' : 'text-white'}`}>{totalScore.toFixed(0)}</p>
@@ -269,10 +278,10 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
         </div>
       </div>
 
-      {/* 帯選択とPreviewボタンのレイアウトを整理 */}
+      {/* 帯選択とPreviewボタン */}
       <div className="flex flex-col gap-4 mb-6">
-        <div className="flex items-center justify-between">
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1 flex gap-2 overflow-x-auto no-scrollbar pb-1">
             {belts.map(b => {
               const tabKey = (b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b;
               const isSelected = viewBelt === tabKey;
@@ -281,7 +290,7 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
               )
             })}
           </div>
-          <button onClick={() => setShowPreview(true)} className="shrink-0 ml-4 px-6 py-2 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase shadow-lg shadow-orange-500/20 active:scale-95 transition-all">Preview</button>
+          <button onClick={() => setShowPreview(true)} className="shrink-0 px-6 py-2 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase shadow-lg shadow-orange-500/20 active:scale-95 transition-all">Preview</button>
         </div>
       </div>
 
@@ -303,22 +312,4 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
                   const newGrade = g;
                   setCriteria(prev => prev.map(item => item.id === c.id ? { ...item, grade: newGrade } : item));
                   supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: newGrade }, { onConflict: 'student_id,criterion_id' }).then();
-                }} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg' : 'bg-gray-50 text-gray-300 hover:bg-gray-100'}`}>{g}</button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {showEdit && <EditStudentModal student={student} allBranchList={allBranchList} onClose={() => setShowEdit(false)} onRefresh={onRefresh} />}
-      {showPreview && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-[#001f3f]/95 backdrop-blur-md">
-          <div className="relative w-full max-w-md h-[90vh] overflow-hidden rounded-[50px] bg-white shadow-2xl">
-            <button onClick={() => setShowPreview(false)} className="absolute top-6 right-6 z-[120] w-10 h-10 bg-black text-white rounded-full font-black">✕</button>
-            <div className="h-full overflow-y-auto"><StudentDashboard profile={student} /></div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+                }} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg' : 'bg-gray-50 text-gray-300 hover:bg-gray-1
