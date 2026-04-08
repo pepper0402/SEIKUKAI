@@ -4,13 +4,45 @@ import { supabase, Profile } from '../lib/supabase'
 // --- ユーティリティ: 年齢計算 ---
 const calculateAge = (birthday: string) => {
   if (!birthday) return 0;
-  const birthDate = new Date(birthday.replace(/\//g, '-'));
+  // 日付形式を統一 (yyyy/mm/dd -> yyyy-mm-dd)
+  const normalizedBirthday = birthday.replace(/\//g, '-');
+  const birthDate = new Date(normalizedBirthday);
   if (isNaN(birthDate.getTime())) return 0;
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
   const m = today.getMonth() - birthDate.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
   return age;
+};
+
+// --- CSVパース用のユーティリティ (引用符内のカンマ/改行に対応) ---
+const parseCsvLine = (text: string): string[] => {
+  const result: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+    if (inQuotes) {
+      if (char === '"' && nextChar === '"') { // エスケープされた引用符
+        cell += '"'; i++;
+      } else if (char === '"') { // 引用符の終わり
+        inQuotes = false;
+      } else {
+        cell += char;
+      }
+    } else {
+      if (char === '"') { // 引用符の始まり
+        inQuotes = true;
+      } else if (char === ',') { // セルの区切り
+        result.push(cell.trim()); cell = '';
+      } else {
+        cell += char;
+      }
+    }
+  }
+  result.push(cell.trim()); // 最後のセルを追加
+  return result;
 };
 
 export default function AdminDashboard({ profile: adminProfile }: { profile: Profile }) {
@@ -92,15 +124,20 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string
+        // 改行コードで分割。引用符内の改行はparseCsvLineで吸収
         const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
+        
         const updates = lines.slice(1).map(line => {
-          const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
+          // 高機能なパース関数を使用
+          const v = parseCsvLine(line);
+          
           if (!v[0] || !v[2]) return null 
           return { 
             dan: v[0], 
             examination_type: v[1] || '基本', 
             examination_content: v[2], 
-            video_url: v[3] || '' // 複数URLはカンマやスペース区切りで文字列として保存
+            // 複数URLは文字列としてそのまま保存 (表示時に分割)
+            video_url: v[3] || '' 
           }
         }).filter(Boolean) as any[]
 
@@ -115,6 +152,8 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
           alert(`✅ 審査項目を ${updates.length} 件で上書き更新しました。`)
           window.location.reload(); 
+        } else {
+          throw new Error("有効なデータが見つかりませんでした。")
         }
       } catch (err: any) { alert('CSVエラー: ' + err.message) } finally { setIsUploading(false); e.target.value = '' }
     }
@@ -131,7 +170,8 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
         const text = event.target?.result as string
         const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
         const updates = lines.slice(1).map(line => {
-          const v = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''))
+          // 名簿側も高機能パースを使用
+          const v = parseCsvLine(line);
           if (!v[8]) return null
           return { name: (v[1] || '') + (v[2] || ''), login_email: v[8].toLowerCase(), kyu: v[7] || '無級', branch: v[0] || '未設定', birthday: v[6] || '', is_admin: false }
         }).filter(Boolean) as any[]
@@ -161,7 +201,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
       <div className={`fixed inset-y-0 left-0 z-40 w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
         <div className="p-6 bg-[#001f3f] text-white">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-lg font-black italic tracking-tighter uppercase">SEIKUKAI <span className="text-orange-400">ADMIN</span></h1>
+            <h1 className="text-lg font-black italic tracking-tighter uppercase leading-none">SEIKUKAI <span className="text-orange-400">ADMIN</span></h1>
             <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase hover:bg-red-700">Logout</button>
           </div>
           
@@ -213,12 +253,12 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
               <div className="flex justify-between items-start cursor-pointer" onClick={() => handleSelectStudent(s)}>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="font-black text-sm">{s.name}</p>
-                    <span className="text-[8px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-400 font-bold">{(s as any).branch}</span>
+                    <p className="font-black text-sm leading-tight">{s.name}</p>
+                    <span className="text-[8px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-400 font-bold whitespace-nowrap">{(s as any).branch}</span>
                   </div>
                   <p className="text-[9px] font-bold text-orange-500 mt-1 uppercase tracking-wider">{s.kyu}</p>
                 </div>
-                <div className="text-right">
+                <div className="text-right whitespace-nowrap pl-2">
                   <p className="text-[8px] font-black text-gray-300 uppercase">Age</p>
                   <p className="text-xs font-black text-[#001f3f]">{calculateAge(s.birthday)}</p>
                 </div>
@@ -233,7 +273,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
           <EvaluationPanel key={selectedStudent.id} student={selectedStudent} isMaster={isMaster} onRefresh={() => { loadStudents(); setSelectedStudent(null); }} allBranchList={allBranchList} onBranchUpdate={handleBranchUpdate} />
         ) : (
           <div className="h-full flex flex-col items-center justify-center opacity-20 grayscale">
-             <h2 className="font-black text-4xl italic tracking-tighter text-[#001f3f]">SEIKUKAI</h2>
+             <h2 className="font-black text-4xl italic tracking-tighter text-[#001f3f] leading-none">SEIKUKAI</h2>
              <p className="text-[10px] font-black uppercase mt-2 tracking-[0.3em]">Management System</p>
           </div>
         )}
@@ -301,15 +341,15 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
           <div className="flex flex-col md:flex-row justify-between items-start gap-4">
             <div>
               <div className="flex items-center gap-3 mb-2">
-                <h2 className="text-2xl md:text-3xl font-black">{student.name}</h2>
-                <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${isGeneral ? 'bg-purple-600' : 'bg-orange-500'}`}>{isGeneral ? '一般部' : '少年部'}</span>
+                <h2 className="text-2xl md:text-3xl font-black leading-tight">{student.name}</h2>
+                <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase whitespace-nowrap ${isGeneral ? 'bg-purple-600' : 'bg-orange-500'}`}>{isGeneral ? '一般部' : '少年部'}</span>
               </div>
               <div className="flex gap-4">
-                <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">現在の級</p><p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p></div>
-                <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">対象の帯</p><p className="text-xl font-black">{targetBelt}</p></div>
+                <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">現在の級</p><p className="text-xl font-black text-orange-400 whitespace-nowrap">{student.kyu || '無級'}</p></div>
+                <div><p className="text-[10px] font-black text-white/40 uppercase mb-1">対象の帯</p><p className="text-xl font-black whitespace-nowrap">{targetBelt}</p></div>
               </div>
             </div>
-            <div className="text-left md:text-right">
+            <div className="text-left md:text-right whitespace-nowrap">
               <p className="text-[10px] font-black text-white/40 mb-1 uppercase tracking-widest">{viewBelt === '橙帯/紫帯' ? targetBelt : viewBelt} SCORE</p>
               <p className={`text-6xl md:text-8xl font-black leading-none ${isScoreReady ? 'text-green-400' : 'text-white'}`}>{totalScore.toFixed(1)}</p>
             </div>
@@ -322,25 +362,25 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
            <h3 className="text-[9px] font-black text-gray-400 uppercase mb-2">🥋 昇級・支部の変更</h3>
            <div className="space-y-2">
               <select value={student.kyu || '無級'} onChange={(e) => {
-                 if (window.confirm(`${e.target.value}に更新します会？`)) {
+                 if (window.confirm(`${e.target.value}に更新しますか？`)) {
                    supabase.from('profiles').update({ kyu: e.target.value }).eq('id', student.id).then(() => onRefresh());
                  }
-              }} className="w-full bg-gray-50 border-none rounded-xl px-3 py-2 text-xs font-black outline-none appearance-none cursor-pointer">
+              }} className="w-full bg-gray-50 border-none rounded-xl px-3 py-2 text-xs font-black outline-none appearance-none cursor-pointer focus:bg-gray-100 transition-colors">
                 {allKyuList.map(k => <option key={k} value={k}>{k}</option>)}
               </select>
-              <select value={(student as any).branch} onChange={(e) => onBranchUpdate(student.id, e.target.value)} className="w-full bg-gray-50 border-none rounded-xl px-3 py-2 text-xs font-black outline-none appearance-none cursor-pointer">
+              <select value={(student as any).branch} onChange={(e) => onBranchUpdate(student.id, e.target.value)} className="w-full bg-gray-50 border-none rounded-xl px-3 py-2 text-xs font-black outline-none appearance-none cursor-pointer focus:bg-gray-100 transition-colors">
                 {allBranchList.map(b => <option key={b} value={b}>{b}支部</option>)}
               </select>
            </div>
         </div>
-        <div className="bg-white p-5 rounded-[25px] shadow-sm border border-gray-100 flex flex-col justify-center">
-           <h3 className="text-[9px] font-black text-gray-400 uppercase mb-2">⚙️ 管理</h3>
+        <div className="bg-white p-5 rounded-[25px] shadow-sm border border-gray-100 flex flex-col justify-center transition-all hover:border-red-100 group">
+           <h3 className="text-[9px] font-black text-gray-400 uppercase mb-2 group-hover:text-red-400 transition-colors">⚙️ 管理</h3>
            <button onClick={async () => {
-             if (window.confirm(`${student.name}さんのデータを完全に削除しますか？`)) {
+             if (window.confirm(`⚠️【重要】${student.name}さんのデータを完全に削除し、退会処理を行います。よろしいですか？`)) {
                const { error } = await supabase.from('profiles').delete().eq('id', student.id)
                if (!error) onRefresh();
              }
-           }} className="w-full py-3 bg-red-50 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all">
+           }} className="w-full py-3 bg-red-50 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all shadow-sm active:scale-95">
              退会処理（削除）
            </button>
         </div>
@@ -350,7 +390,7 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
         {belts.map(b => {
           const tabKey = (b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b;
           return (
-            <button key={b} onClick={() => setViewBelt(tabKey)} className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap transition-all ${viewBelt === tabKey ? 'bg-[#001f3f] text-white shadow-md' : 'bg-white text-gray-400'}`}>{b}</button>
+            <button key={b} onClick={() => setViewBelt(tabKey)} className={`px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap transition-all ${viewBelt === tabKey ? 'bg-[#001f3f] text-white shadow-md scale-105' : 'bg-white text-gray-400 hover:text-[#001f3f]'}`}>{b}</button>
           )
         })}
       </div>
@@ -359,21 +399,23 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
         {criteria.map(c => (
           <div key={c.id} className="bg-white p-4 md:p-6 rounded-[30px] shadow-sm border border-gray-100 transition-all hover:shadow-md">
             <div className="flex flex-col mb-4">
-              <span className="text-[9px] font-black text-gray-300 uppercase mb-1">{c.examination_type}</span>
+              <span className="text-[9px] font-black text-gray-300 uppercase mb-1 tracking-wider">{c.examination_type}</span>
               <p className="text-sm font-bold text-[#001f3f] leading-snug">{c.examination_content}</p>
               
-              {/* 動画URLが複数ある場合、ボタンを分けるロジック */}
+              {/* 動画URL表示セクション (修正済み) */}
               {c.video_url && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {c.video_url.split(/[\s,]+/).filter((url: string) => url.startsWith('http')).map((url: string, index: number) => (
+                <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
+                  {/* カンマ、スペース、改行で区切る */}
+                  {c.video_url.split(/[\s,\n]+/).filter((url: string) => url.startsWith('http')).map((url: string, index: number) => (
                     <a 
                       key={index}
                       href={url} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-[9px] bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg font-black uppercase tracking-wider hover:bg-orange-600 hover:text-white transition-all border border-orange-200"
+                      title={`お手本動画 ${index + 1} を開く`}
+                      className="text-lg bg-orange-50 text-orange-600 px-3 py-1.5 rounded-xl hover:bg-orange-600 hover:text-white transition-all border border-orange-100 shadow-sm active:scale-90"
                     >
-                      MOVIE {c.video_url.split(/[\s,]+/).filter((u:string) => u.startsWith('http')).length > 1 ? index + 1 : ''} 📺
+                      ▶️
                     </a>
                   ))}
                 </div>
@@ -382,11 +424,14 @@ function EvaluationPanel({ student, isMaster, onRefresh, allBranchList, onBranch
             
             <div className="grid grid-cols-4 gap-2">
               {['A', 'B', 'C', 'D'].map(g => (
-                <button key={g} onClick={() => updateGrade(c.id, g)} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-300 active:bg-gray-100'}`}>{g}</button>
+                <button key={g} onClick={() => updateGrade(c.id, g)} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-300 active:bg-gray-100 hover:bg-gray-100'}`}>{g}</button>
               ))}
             </div>
           </div>
         ))}
+        {criteria.length === 0 && (
+          <div className="p-10 text-center text-gray-300 text-[10px] font-black uppercase italic tracking-widest border-2 border-dashed border-gray-100 rounded-[30px]">No criteria found for {viewBelt === '橙帯/紫帯' ? targetBelt : viewBelt}</div>
+        )}
       </div>
     </div>
   )
