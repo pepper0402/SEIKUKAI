@@ -6,15 +6,6 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
   const [viewMode, setViewMode] = useState<'current' | 'history'>('current')
   const [loading, setLoading] = useState(true)
 
-  const trainingPeriod = useMemo(() => {
-    const start = new Date((profile as any).joined_at || '');
-    const now = new Date();
-    const diffDays = Math.ceil(Math.abs(now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    const years = Math.floor(diffDays / 365);
-    const months = Math.floor((diffDays % 365) / 30);
-    return years === 0 ? `${months}ヶ月` : `${years}年 ${months}ヶ月`;
-  }, [profile]);
-
   useEffect(() => {
     async function loadData() {
       setLoading(true)
@@ -37,26 +28,23 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
       setLoading(false)
     }
     loadData()
-  }, [profile]);
+  }, [profile.id, profile.kyu]);
 
   const totalScore = currentCriteria.reduce((acc, curr) => acc + (curr.grade === 'A' ? 2.5 : curr.grade === 'B' ? 1.5 : curr.grade === 'C' ? 0.5 : 0), 0);
 
-  if (loading) return <div className="h-full bg-white flex items-center justify-center font-black text-gray-100 italic">LOADING...</div>
+  if (loading) return <div className="h-full bg-white flex items-center justify-center text-gray-200 font-black animate-pulse">LOADING...</div>
 
   return (
-    <div className="min-h-screen bg-white text-[#001f3f] font-sans pb-10">
-      {/* 白ベースのヘッダー */}
-      <div className="px-8 pt-16 pb-12 bg-white rounded-b-[60px] relative border-b border-gray-50 shadow-sm">
-        <p className="text-[10px] font-black text-orange-500 uppercase tracking-[0.2em] mb-2">Seikukai Portal</p>
-        <h1 className="text-4xl font-black tracking-tighter mb-6 italic">{profile.name}</h1>
+    <div className="min-h-screen bg-[#f8f9fa] pb-12 text-[#001f3f] font-sans">
+      <div className="bg-white px-8 pt-16 pb-12 rounded-b-[60px] relative shadow-sm border-b border-gray-100">
+        <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-2">Seikukai Portal</p>
+        <h1 className="text-4xl font-black italic tracking-tighter mb-6">{profile.name}</h1>
         <div className="flex gap-3">
           <div className="bg-[#001f3f] text-white px-5 py-2 rounded-2xl text-[10px] font-black uppercase">{profile.kyu || '無級'}</div>
-          <div className="bg-gray-100 text-gray-400 px-5 py-2 rounded-2xl text-[10px] font-black uppercase">修行: {trainingPeriod}</div>
         </div>
       </div>
 
       <div className="px-6 -mt-8 relative z-10">
-        {/* メインスコアカード */}
         <div className="bg-white rounded-[40px] p-8 shadow-2xl shadow-gray-200/60 border border-white">
           <div className="flex bg-gray-50 p-1 rounded-2xl mb-8">
             <button onClick={() => setViewMode('current')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${viewMode === 'current' ? 'bg-white text-[#001f3f] shadow-sm' : 'text-gray-400'}`}>Current</button>
@@ -64,14 +52,13 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
           </div>
 
           <div className="text-center">
-            <p className="text-7xl font-black tracking-tighter leading-none mb-2">{totalScore.toFixed(0)}</p>
+            <p className="text-7xl font-black tracking-tighter leading-none">{totalScore.toFixed(0)}</p>
             <div className="h-2 bg-gray-50 rounded-full overflow-hidden mt-6">
               <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${Math.min(totalScore, 100)}%` }}></div>
             </div>
           </div>
         </div>
 
-        {/* 以前の白いリスト表示 */}
         <div className="mt-10 space-y-4">
           {currentCriteria.map(c => (
             <div key={c.id} className="bg-white p-5 rounded-[30px] flex items-center gap-5 border border-gray-50 shadow-sm transition-all active:scale-95">
