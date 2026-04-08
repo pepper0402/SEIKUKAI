@@ -9,23 +9,19 @@ const allKyuList = [
   '初段', '弍段', '参段', '四段', '五段'
 ];
 
-// input[type="date"] 用にフォーマットする関数
-const formatDateForInput = (dateStr: string | null | undefined) => {
-  if (!dateStr) return '';
-  const d = new Date(dateStr.replace(/\//g, '-'));
-  if (isNaN(d.getTime())) return '';
-  return d.toISOString().split('T')[0];
-};
-
-const calculateAge = (birthday: string | null | undefined) => {
-  if (!birthday) return 0;
-  const birthDate = new Date(birthday.replace(/\//g, '-'));
-  if (isNaN(birthDate.getTime())) return 0;
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const m = today.getMonth() - birthDate.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-  return age;
+// 誕生日の表示・計算用
+const calculateAge = (birthdayStr: any) => {
+  if (!birthdayStr) return 0;
+  try {
+    const normalized = String(birthdayStr).split('T')[0].replace(/\//g, '-');
+    const birthDate = new Date(normalized);
+    if (isNaN(birthDate.getTime())) return 0;
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age;
+  } catch (e) { return 0; }
 };
 
 const getBeltColorClass = (beltName: string) => {
@@ -53,7 +49,12 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   const loadStudents = useCallback(async () => {
     const { data } = await supabase.from('profiles').select('*').eq('is_admin', false)
     setStudents(data || [])
-  }, [])
+    // 選択中の生徒がいる場合、そのデータも更新
+    if (selectedStudent) {
+      const updated = data?.find(s => s.id === selectedStudent.id)
+      if (updated) setSelectedStudent(updated)
+    }
+  }, [selectedStudent])
 
   useEffect(() => {
     loadStudents()
@@ -125,7 +126,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-10 pt-16 md:pt-10">
         {selectedStudent ? (
-          <EvaluationPanel key={selectedStudent.id} student={selectedStudent} onRefresh={() => { loadStudents(); setSelectedStudent(null); }} allBranchList={allBranchList} />
+          <EvaluationPanel key={selectedStudent.id} student={selectedStudent} onRefresh={loadStudents} allBranchList={allBranchList} />
         ) : (
           <div className="h-full flex flex-col items-center justify-center opacity-20 grayscale">
              <h2 className="font-black text-4xl italic tracking-tighter uppercase">SEIKUKAI</h2>
@@ -137,10 +138,12 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 }
 
 function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
-  // 初期化時に誕生日を確実に変換
+  // input dateが読める形式に厳密に変換
+  const birthValue = student.birthday ? String(student.birthday).split('T')[0].replace(/\//g, '-') : '';
+  
   const [formData, setFormData] = useState({ 
     ...student, 
-    birthday: formatDateForInput(student.birthday) 
+    birthday: birthValue 
   });
   const [loading, setLoading] = useState(false);
 
@@ -151,7 +154,7 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
       name: formData.name,
       kyu: formData.kyu,
       branch: formData.branch,
-      birthday: formData.birthday,
+      birthday: formData.birthday || null,
     }).eq('id', student.id);
     
     if (error) alert(error.message);
@@ -162,43 +165,42 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
   const handleDelete = async () => {
     if (!window.confirm('退会処理を行いますか？')) return;
     setLoading(true);
-    const { error } = await supabase.from('profiles').delete().eq('id', student.id);
-    if (error) alert(error.message);
-    else { onRefresh(); onClose(); }
-    setLoading(false);
+    await supabase.from('profiles').delete().eq('id', student.id);
+    onRefresh(); 
+    onClose();
   };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#001f3f]/90 backdrop-blur-sm">
       <div className="bg-white w-full max-w-md rounded-[40px] p-8 shadow-2xl relative">
-        <button onClick={onClose} className="absolute top-6 right-6 font-black text-gray-400 hover:text-black">✕</button>
-        <h2 className="text-xl font-black italic mb-6 uppercase tracking-tighter">会員詳細変更</h2>
+        <button onClick={onClose} className="absolute top-6 right-6 font-black text-gray-400">✕</button>
+        <h2 className="text-xl font-black italic mb-6 uppercase">会員詳細変更</h2>
         <form onSubmit={handleUpdate} className="space-y-4">
           <div>
             <label className="text-[9px] font-black text-gray-400 uppercase ml-2">氏名</label>
-            <input type="text" className="w-full bg-gray-50 border-none rounded-2xl px-4 py-3 text-sm outline-none font-bold" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
+            <input type="text" className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm font-bold border-none" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-[9px] font-black text-gray-400 uppercase ml-2">現在の級</label>
-              <select className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm font-bold outline-none" value={formData.kyu || '無級'} onChange={e => setFormData({...formData, kyu: e.target.value})}>
+              <select className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm font-bold" value={formData.kyu || '無級'} onChange={e => setFormData({...formData, kyu: e.target.value})}>
                 {allKyuList.map(k => <option key={k} value={k}>{k}</option>)}
               </select>
             </div>
             <div>
               <label className="text-[9px] font-black text-gray-400 uppercase ml-2">所属支部</label>
-              <select className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm font-bold outline-none" value={formData.branch || '池田'} onChange={e => setFormData({...formData, branch: e.target.value})}>
+              <select className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm font-bold" value={formData.branch || ''} onChange={e => setFormData({...formData, branch: e.target.value})}>
                 {allBranchList.map((b:string) => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
           </div>
           <div>
             <label className="text-[9px] font-black text-gray-400 uppercase ml-2">生年月日</label>
-            <input type="date" className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm outline-none font-bold" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} />
+            <input type="date" className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-sm font-bold border-none" value={formData.birthday || ''} onChange={e => setFormData({...formData, birthday: e.target.value})} />
           </div>
           <div className="pt-2 space-y-2">
-            <button type="submit" disabled={loading} className="w-full py-4 bg-[#001f3f] text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all">保存する</button>
-            <button type="button" onClick={handleDelete} className="w-full py-3 text-red-500 font-black text-[10px] uppercase tracking-widest hover:bg-red-50 rounded-2xl transition-all">退会させる</button>
+            <button type="submit" disabled={loading} className="w-full py-4 bg-[#001f3f] text-white rounded-2xl font-black uppercase text-xs shadow-lg">保存する</button>
+            <button type="button" onClick={handleDelete} className="w-full py-3 text-red-500 font-black text-[10px] uppercase tracking-widest">退会させる</button>
           </div>
         </form>
       </div>
@@ -209,13 +211,12 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
 function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   const [showEdit, setShowEdit] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  
-  // 生年月日から判定
+  const [criteria, setCriteria] = useState<any[]>([])
+
+  // 年齢判定とラベル
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
   const isGeneral = age >= 15;
   const sectionLabel = isGeneral ? '一般部' : '少年部';
-
-  const [criteria, setCriteria] = useState<any[]>([])
 
   const targetBelt = useMemo(() => {
     const k = student.kyu || '無級';
@@ -249,9 +250,9 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   const handlePromote = async () => {
     const currentIdx = allKyuList.indexOf(student.kyu || '無級');
     const nextKyu = allKyuList[currentIdx + 1];
-    if (!nextKyu || !window.confirm(`${nextKyu}への昇級を確定しますか？`)) return;
-    const { error } = await supabase.from('profiles').update({ kyu: nextKyu }).eq('id', student.id);
-    if (!error) { alert(`${nextKyu}に昇級しました！`); onRefresh(); }
+    if (!nextKyu || !window.confirm(`${nextKyu}へ昇級しますか？`)) return;
+    await supabase.from('profiles').update({ kyu: nextKyu }).eq('id', student.id);
+    onRefresh();
   };
 
   const belts = isGeneral 
@@ -260,35 +261,35 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
 
   return (
     <div className="max-w-2xl mx-auto pb-20">
-      {/* ヘッダー情報パネル */}
-      <div className="bg-[#001f3f] rounded-[40px] p-6 md:p-8 text-white mb-8 shadow-xl relative overflow-hidden">
-        <div className="relative z-10 flex justify-between items-center">
+      {/* メインヘッダー */}
+      <div className="bg-[#001f3f] rounded-[40px] p-6 md:p-8 text-white mb-8 shadow-2xl relative overflow-hidden">
+        <div className="relative z-10 flex justify-between items-start md:items-center">
           <div className="flex-1">
-            <h2 className="text-3xl font-black mb-4 leading-tight">{student.name}</h2>
-            <div className="flex gap-8 items-center">
+            <h2 className="text-3xl font-black mb-4 leading-tight tracking-tighter">{student.name}</h2>
+            <div className="flex gap-6 items-center">
               <div>
-                <p className="text-[10px] font-black text-white/40 uppercase mb-1">CURRENT</p>
+                <p className="text-[10px] font-black text-white/40 uppercase mb-1">GRADE</p>
                 <p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p>
               </div>
               <div className="h-8 w-[1px] bg-white/10"></div>
-              {/* OBIを消して 部門ラベルを大きく表示 */}
               <div>
                 <p className="text-[10px] font-black text-white/40 uppercase mb-1">{sectionLabel}</p>
                 <p className="text-xl font-black">{targetBelt}</p>
               </div>
             </div>
           </div>
-          <div className="text-right min-w-[130px]">
-            <p className="text-[10px] font-black text-white/40 mb-1 uppercase tracking-widest">SCORE</p>
+          <div className="text-right">
+            <p className="text-[10px] font-black text-white/40 mb-1 uppercase tracking-widest">TOTAL SCORE</p>
             <p className={`text-6xl md:text-7xl font-black leading-none ${isScoreReady ? 'text-green-400' : 'text-white'}`}>{totalScore.toFixed(0)}</p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3 mt-6 relative z-10">
-          <button onClick={handlePromote} className={`py-3.5 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${isScoreReady ? 'bg-orange-500 text-white shadow-lg' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>昇級を確定する</button>
-          <button onClick={() => setShowEdit(true)} className="py-3.5 bg-white/20 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white/30 transition-all">詳細変更・退会</button>
+        <div className="grid grid-cols-2 gap-3 mt-8 relative z-10">
+          <button onClick={handlePromote} className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${isScoreReady ? 'bg-orange-500 text-white shadow-lg' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>昇級確定</button>
+          <button onClick={() => setShowEdit(true)} className="py-4 bg-white/20 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white/30 transition-all">データ修正</button>
         </div>
       </div>
 
+      {/* 帯タブ */}
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex items-center justify-between gap-4">
           <div className="flex-1 flex gap-2 overflow-x-auto no-scrollbar pb-1">
@@ -300,10 +301,11 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
               )
             })}
           </div>
-          <button onClick={() => setShowPreview(true)} className="shrink-0 px-6 py-2 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase shadow-lg shadow-orange-500/20 active:scale-95 transition-all">Preview</button>
+          <button onClick={() => setShowPreview(true)} className="shrink-0 px-6 py-2 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">Preview</button>
         </div>
       </div>
 
+      {/* 審査項目リスト */}
       <div className="space-y-4">
         {criteria.map(c => (
           <div key={c.id} className="bg-white p-5 md:p-6 rounded-[35px] shadow-sm border border-gray-100">
@@ -322,7 +324,7 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
                   const newGrade = g;
                   setCriteria(prev => prev.map(item => item.id === c.id ? { ...item, grade: newGrade } : item));
                   supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: newGrade }, { onConflict: 'student_id,criterion_id' }).then();
-                }} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg' : 'bg-gray-50 text-gray-300 hover:bg-gray-100'}`}>{g}</button>
+                }} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg shadow-black/20' : 'bg-gray-50 text-gray-300 hover:bg-gray-100'}`}>{g}</button>
               ))}
             </div>
           </div>
