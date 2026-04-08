@@ -23,20 +23,6 @@ const calculateAge = (birthdayStr: any) => {
   } catch (e) { return 0; }
 };
 
-const calculateExperience = (createdAt: any) => {
-  if (!createdAt) return "不明";
-  try {
-    const start = new Date(createdAt);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - start.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const years = Math.floor(diffDays / 365);
-    const months = Math.floor((diffDays % 365) / 30);
-    if (years === 0) return `${months}ヶ月`;
-    return `${years}年${months}ヶ月`;
-  } catch (e) { return "不明"; }
-};
-
 const getBeltColorClass = (beltName: string) => {
   switch (beltName) {
     case '白帯': return 'bg-gray-100 text-gray-600 border-gray-200';
@@ -48,20 +34,6 @@ const getBeltColorClass = (beltName: string) => {
     case '茶帯': return 'bg-[#5D4037] text-white border-[#3E2723]';
     case '黒帯': return 'bg-black text-white border-gray-800';
     default: return 'bg-white text-gray-400 border-gray-100';
-  }
-};
-
-const getRawColorCode = (beltName: string) => {
-  switch (beltName) {
-    case '白帯': return '#ccc';
-    case '黄帯': return '#fbbf24';
-    case '青帯': return '#2563eb';
-    case '橙帯': return '#f97316';
-    case '紫帯': return '#9333ea';
-    case '緑帯': return '#16a34a';
-    case '茶帯': return '#5d4037';
-    case '黒帯': return '#000';
-    default: return 'transparent';
   }
 };
 
@@ -154,8 +126,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-10 pt-16 md:pt-10">
         {selectedStudent ? (
           <EvaluationPanel 
-            /* ここが重要：keyにIDを渡すことで、別の人を選んだ時にコンポーネントを強制リセットします */
-            key={selectedStudent.id} 
+            key={`${selectedStudent.id}-${selectedStudent.kyu}-${selectedStudent.birthday}`} 
             student={selectedStudent} 
             onRefresh={loadStudents} 
             allBranchList={allBranchList} 
@@ -240,13 +211,11 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   const [criteria, setCriteria] = useState<any[]>([])
 
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
-  const experience = useMemo(() => calculateExperience(student.created_at), [student.created_at]);
-  
   const isGeneral = age >= 15;
-  const sectionLabel = isGeneral ? "一般部" : "キッズ";
+  const sectionLabel = isGeneral ? "一般部" : "少年部";
   const sectionColorClass = isGeneral ? "bg-rose-500 text-white" : "bg-sky-400 text-[#001f3f]";
 
-  const currentBelt = useMemo(() => {
+  const targetBelt = useMemo(() => {
     const k = student.kyu || '無級';
     if (k === '無級' || k === '準10級') return '白帯';
     if (k.match(/10|9/)) return '黄帯';
@@ -257,7 +226,7 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
     return '黒帯';
   }, [student.kyu, isGeneral]);
 
-  const dbBeltName = (currentBelt === '橙帯' || currentBelt === '紫帯') ? '橙帯/紫帯' : currentBelt;
+  const dbBeltName = (targetBelt === '橙帯' || targetBelt === '紫帯') ? '橙帯/紫帯' : targetBelt;
   const [viewBelt, setViewBelt] = useState(dbBeltName);
 
   useEffect(() => {
@@ -294,7 +263,7 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
         <div className="relative z-10 flex flex-wrap justify-between items-center gap-4">
           <div className="flex-1 min-w-[200px]">
             <h2 className="text-3xl font-black mb-4 leading-tight tracking-tighter">{student.name}</h2>
-            <div className="flex flex-wrap gap-4 items-center">
+            <div className="flex gap-4 items-center">
               <div>
                 <p className="text-[10px] font-black text-white/40 uppercase mb-1">GRADE</p>
                 <p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p>
@@ -304,12 +273,7 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
                 <span className={`inline-block px-3 py-0.5 rounded-full text-[10px] font-black uppercase mb-1 ${sectionColorClass}`}>
                   {sectionLabel}
                 </span>
-                <p className="text-xl font-black">{currentBelt}</p>
-              </div>
-              <div className="h-8 w-[1px] bg-white/10"></div>
-              <div>
-                <p className="text-[10px] font-black text-white/40 uppercase mb-1">修行年数</p>
-                <p className="text-xl font-black">{experience}</p>
+                <p className="text-xl font-black">{targetBelt}</p>
               </div>
             </div>
           </div>
@@ -340,10 +304,7 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
                       ? `${getBeltColorClass(b)} shadow-md scale-105` 
                       : `bg-white text-gray-400 border-gray-100 hover:border-gray-300`
                     }`}
-                  style={!isSelected ? { 
-                    borderLeftColor: getRawColorCode(b), 
-                    borderLeftWidth: '4px' 
-                  } : {}}
+                  style={!isSelected ? { borderLeftColor: b === '白帯' ? '#ccc' : b === '黄帯' ? '#fbbf24' : b === '青帯' ? '#2563eb' : b === '橙帯' ? '#f97316' : b === '紫帯' ? '#9333ea' : b === '緑帯' ? '#16a34a' : b === '茶帯' ? '#5d4037' : '#000', borderLeftWidth: '4px' } : {}}
                 >
                   {b}
                 </button>
