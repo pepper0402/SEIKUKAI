@@ -1,13 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { supabase, Profile } from '../lib/supabase'
 
-const getBeltTheme = (kyu: string) => {
+// 年齢計算ユーティリティ
+const calculateAge = (birthdayStr: any) => {
+  if (!birthdayStr) return 0;
+  const birthDate = new Date(birthdayStr);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+  return age;
+};
+
+const getBeltTheme = (kyu: string, isGeneral: boolean) => {
   const k = kyu || '無級';
-  // 無級と準10級は白帯
   if (k === '無級' || k.includes('準10級')) return { name: '白帯', bg: 'bg-white', text: 'text-gray-900', badge: 'bg-gray-100 text-gray-500' };
   if (k.includes('10級') || k.includes('9級')) return { name: '黄帯', bg: 'bg-yellow-400', text: 'text-yellow-900', badge: 'bg-yellow-500 text-white' };
   if (k.includes('8級') || k.includes('7級')) return { name: '青帯', bg: 'bg-blue-600', text: 'text-white', badge: 'bg-blue-800 text-white' };
-  if (k.includes('6級') || k.includes('5級')) return { name: '橙・紫帯', bg: 'bg-orange-500', text: 'text-white', badge: 'bg-orange-700 text-white' };
+  if (k.includes('6級') || k.includes('5級')) {
+    const name = isGeneral ? '紫帯' : '橙帯';
+    return { name, bg: isGeneral ? 'bg-purple-600' : 'bg-orange-500', text: 'text-white', badge: 'bg-white/20 text-white' };
+  }
   if (k.includes('4級') || k.includes('3級')) return { name: '緑帯', bg: 'bg-green-600', text: 'text-white', badge: 'bg-green-800 text-white' };
   if (k.includes('2級') || k.includes('1級')) return { name: '茶帯', bg: 'bg-amber-900', text: 'text-white', badge: 'bg-amber-950 text-white' };
   if (k.includes('段')) return { name: '黒帯', bg: 'bg-gray-900', text: 'text-white', badge: 'bg-black text-white' };
@@ -24,17 +37,28 @@ const gradeToScore = (grade: string | null) => {
 export default function StudentDashboard({ profile }: { profile: Profile }) {
   const [currentCriteria, setCurrentCriteria] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const theme = getBeltTheme(profile.kyu || '無級')
+
+  // 一般部かキッズかの判定
+  const isGeneral = useMemo(() => calculateAge(profile.birthday) >= 15, [profile.birthday]);
+  const theme = useMemo(() => getBeltTheme(profile.kyu || '無級', isGeneral), [profile.kyu, isGeneral]);
 
   useEffect(() => {
     async function loadData() {
       setLoading(true)
+      
+      // DB上の「橙帯/紫帯」という形式に対応させる
+      const targetBelt = (theme.name === '橙帯' || theme.name === '紫帯') 
+        ? '橙帯/紫帯' 
+        : theme.name;
+
+      // 1. 現在の級の審査基準を取得
       const { data: criteriaData } = await supabase
         .from('criteria')
         .select('*')
-        .eq('dan', theme.name.split('・')[0])
+        .eq('dan', targetBelt)
         .order('id', { ascending: true })
 
+      // 2. 自分の評価済データを取得
       const { data: scoresData } = await supabase
         .from('evaluations')
         .select('*')
@@ -70,7 +94,7 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
   return (
     <div className="min-h-screen bg-[#f8f9fa] pb-12 text-[#001f3f]">
       {/* 帯色メインヘッダー */}
-      <div className={`${theme.bg} ${theme.text} px-6 pt-10 pb-20 rounded-b-[50px] shadow-2xl relative overflow-hidden transition-all duration-700`}>
+      <div className={`${theme.bg} ${theme.text} px-6 pt-10 pb-20 rounded-b-[50px] shadow-2xl relative overflow-hidden transition-all duration-700 border-b border-black/5`}>
         <div className="absolute top-0 right-0 opacity-[0.08] text-[12rem] font-black italic -mr-16 -mt-12 pointer-events-none select-none">
           {theme.name.slice(0,1)}
         </div>
@@ -107,13 +131,13 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
       </div>
 
       <div className="px-5 -mt-10 relative z-20 max-w-md mx-auto">
-        {/* スコアカード：縦幅スリム版 */}
+        {/* スコアカード */}
         <div className="bg-white rounded-[35px] p-6 shadow-2xl shadow-gray-200/50 border border-white mb-6">
           <div className="flex justify-between items-center mb-4">
             <div>
               <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest mb-1 italic leading-none">Current Score</p>
               <div className="flex items-baseline">
-                <span className="text-5xl font-black tracking-tighter text-[#001f3f] leading-none">{totalScore}</span>
+                <span className="text-5xl font-black tracking-tighter text-[#001f3f] leading-none">{totalScore.toFixed(0)}</span>
                 <span className="text-sm font-black opacity-10 ml-1">/ 100</span>
               </div>
             </div>
@@ -124,7 +148,7 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
               </div>
             ) : (
               <div className="text-right">
-                <p className="text-[10px] font-black text-orange-500 mb-1 tracking-tighter italic leading-none">あと {80 - totalScore}点</p>
+                <p className="text-[10px] font-black text-orange-500 mb-1 tracking-tighter italic leading-none">あと {(80 - totalScore).toFixed(0)}点</p>
                 <div className="w-16 h-1 bg-gray-50 rounded-full overflow-hidden">
                   <div className="h-full bg-orange-500 rounded-full" style={{ width: `${(totalScore/80)*100}%` }}></div>
                 </div>
@@ -143,31 +167,33 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
 
         <div className="flex items-center justify-between px-2 mb-4">
           <h2 className="font-black text-[10px] text-gray-400 uppercase tracking-[0.2em] italic opacity-80">
-            Examination List
+            Examination List ({theme.name})
           </h2>
         </div>
         
         <div className="space-y-3">
+          {currentCriteria.length === 0 && !loading && (
+            <div className="bg-white rounded-[28px] p-8 text-center text-gray-300 font-black italic text-sm border border-dashed border-gray-200">
+              NO EXAMINATION DATA FOUND
+            </div>
+          )}
           {currentCriteria.map((c) => (
             <div key={c.id} className="bg-white rounded-[28px] p-4 shadow-sm border border-gray-50 hover:shadow-md transition-all duration-300 group">
               <div className="flex items-center gap-4">
-                {/* 評価 A-D */}
                 <div className={`shrink-0 w-12 h-12 rounded-[18px] flex items-center justify-center font-black text-lg border-2 transition-all ${
                   c.grade === 'A' ? 'bg-orange-50 border-orange-500 text-orange-600 shadow-lg shadow-orange-100' : 
                   c.grade === 'B' ? 'bg-slate-50 border-slate-800 text-slate-800' :
-                  c.grade ? 'bg-gray-50 border-gray-100 text-gray-300' : 
+                  c.grade === 'C' ? 'bg-gray-50 border-gray-400 text-gray-600' : 
                   'bg-white border-dashed border-gray-100 text-gray-100'
                 }`}>
                   {c.grade || '-'}
                 </div>
 
-                {/* 内容テキストエリア */}
                 <div className="flex-1 min-w-0">
                   <p className="text-[8px] font-black text-gray-300 uppercase tracking-widest mb-0.5 leading-none">{c.examination_type || '審査'}</p>
                   <p className="text-[13px] font-bold text-[#001f3f] leading-[1.3] break-words">{c.examination_content}</p>
                 </div>
 
-                {/* 動画リンクエリア（右側に配置） */}
                 {c.video_url && (
                   <div className="shrink-0 flex gap-1 ml-auto">
                     {c.video_url
