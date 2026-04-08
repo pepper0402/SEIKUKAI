@@ -9,19 +9,23 @@ const allKyuList = [
   '初段', '弍段', '参段', '四段', '五段'
 ];
 
-// どんな形式の日付が来ても年齢を計算する
+// 文字列から確実に年齢を出す（初期読み込み失敗対策）
 const calculateAge = (birthdayStr: any) => {
   if (!birthdayStr || birthdayStr === "") return 0;
   try {
+    // T以降をカットし、スラッシュをハイフンに統一
     const datePart = String(birthdayStr).split('T')[0].replace(/\//g, '-');
     const birthDate = new Date(datePart);
     if (isNaN(birthDate.getTime())) return 0;
+
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const m = today.getMonth() - birthDate.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
     return age;
-  } catch (e) { return 0; }
+  } catch (e) {
+    return 0;
+  }
 };
 
 const getBeltColorClass = (beltName: string) => {
@@ -50,6 +54,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
     const { data } = await supabase.from('profiles').select('*').eq('is_admin', false)
     if (data) {
       setStudents(data);
+      // 選択中の生徒がいる場合、最新データで上書きして再描画を促す
       if (selectedStudent) {
         const updated = data.find(s => s.id === selectedStudent.id);
         if (updated) setSelectedStudent({ ...updated }); 
@@ -60,7 +65,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
   useEffect(() => {
     loadStudents()
     if (window.innerWidth < 768) setIsSidebarOpen(false)
-  }, [loadStudents])
+  }, []) // 初回のみ。loadStudents内のselectedStudent依存は一旦切る
 
   const allBranchList = useMemo(() => {
     const branches = students.map(s => (s as any).branch).filter(Boolean)
@@ -144,6 +149,7 @@ export default function AdminDashboard({ profile: adminProfile }: { profile: Pro
 }
 
 function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
+  // DBからの生データをinput type="date"が食える形に強制整形
   const getSafeDate = (val: any) => {
     if (!val) return "";
     return String(val).split('T')[0].replace(/\//g, '-');
@@ -166,7 +172,7 @@ function EditStudentModal({ student, allBranchList, onClose, onRefresh }: any) {
     }).eq('id', student.id);
     
     if (error) alert(error.message);
-    else { onRefresh(); onClose(); }
+    else { alert('更新しました'); onRefresh(); onClose(); }
     setLoading(false);
   };
 
@@ -212,15 +218,10 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   const [showPreview, setShowPreview] = useState(false);
   const [criteria, setCriteria] = useState<any[]>([])
 
-  // 年齢判定と色付きラベルの設定
+  // 年齢判定（ここで初回読み込み時にも確実に計算される）
   const age = useMemo(() => calculateAge(student.birthday), [student.birthday]);
   const isGeneral = age >= 15;
-  
-  // ラベル部分のスタイル定義
   const sectionLabel = isGeneral ? "一般部" : "少年部";
-  const sectionColorClass = isGeneral 
-    ? "bg-rose-500 text-white" 
-    : "bg-sky-400 text-[#001f3f]";
 
   const targetBelt = useMemo(() => {
     const k = student.kyu || '無級';
@@ -254,7 +255,7 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   const handlePromote = async () => {
     const currentIdx = allKyuList.indexOf(student.kyu || '無級');
     const nextKyu = allKyuList[currentIdx + 1];
-    if (!nextKyu || !window.confirm(`${nextKyu}へ昇級確定しますか？`)) return;
+    if (!nextKyu || !window.confirm(`${nextKyu}へ昇級しますか？`)) return;
     await supabase.from('profiles').update({ kyu: nextKyu }).eq('id', student.id);
     onRefresh();
   };
@@ -266,20 +267,17 @@ function EvaluationPanel({ student, onRefresh, allBranchList }: any) {
   return (
     <div className="max-w-2xl mx-auto pb-20">
       <div className="bg-[#001f3f] rounded-[40px] p-6 md:p-8 text-white mb-8 shadow-2xl relative overflow-hidden">
-        <div className="relative z-10 flex flex-wrap justify-between items-center gap-4">
-          <div className="flex-1 min-w-[200px]">
+        <div className="relative z-10 flex justify-between items-center">
+          <div className="flex-1">
             <h2 className="text-3xl font-black mb-4 leading-tight tracking-tighter">{student.name}</h2>
-            <div className="flex gap-4 items-center">
+            <div className="flex gap-6 items-center">
               <div>
                 <p className="text-[10px] font-black text-white/40 uppercase mb-1">GRADE</p>
                 <p className="text-xl font-black text-orange-400">{student.kyu || '無級'}</p>
               </div>
               <div className="h-8 w-[1px] bg-white/10"></div>
               <div>
-                {/* ここでラベルに色を付与 */}
-                <span className={`inline-block px-3 py-0.5 rounded-full text-[10px] font-black uppercase mb-1 ${sectionColorClass}`}>
-                  {sectionLabel}
-                </span>
+                <p className="text-[10px] font-black text-white/40 uppercase mb-1">{sectionLabel}</p>
                 <p className="text-xl font-black">{targetBelt}</p>
               </div>
             </div>
