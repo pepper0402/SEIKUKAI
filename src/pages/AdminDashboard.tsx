@@ -97,7 +97,7 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
             alert('有効なデータが見つかりません。\nCSVの形式・文字コードを確認してください。');
             return;
           }
-          const { error } = await supabase.from('criteria').upsert(batch, { onConflict: 'dan,examination_content' });
+          const { error } = await supabase.from('criteria').upsert(batch, { onConflict: 'dan,examination_type,examination_content' });
           if (error) {
             alert('インポートエラー:\n' + error.message);
             return;

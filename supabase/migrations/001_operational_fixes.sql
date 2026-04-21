@@ -10,9 +10,10 @@
 CREATE UNIQUE INDEX IF NOT EXISTS profiles_login_email_unique
   ON profiles(login_email) WHERE login_email IS NOT NULL;
 
--- criteria: (dan, examination_content) の組で一意
-CREATE UNIQUE INDEX IF NOT EXISTS criteria_dan_content_unique
-  ON criteria(dan, examination_content);
+-- criteria: (dan, examination_type, examination_content) の組で一意
+-- 同じ項目名でも examination_type（基本/組手/ミット等）が違えば別物として扱う
+CREATE UNIQUE INDEX IF NOT EXISTS criteria_dan_type_content_unique
+  ON criteria(dan, examination_type, examination_content);
 
 -- ------------------------------------------------------------
 -- 2. 昇級履歴テーブル
