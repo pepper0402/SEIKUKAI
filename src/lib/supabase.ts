@@ -106,6 +106,14 @@ export const resolveRole = (profile: Profile): Role => {
   return profile.is_admin ? 'master' : 'student'
 }
 
+/** '正10級' のような表記を '10級' に正規化（準・段はそのまま） */
+export const normalizeKyu = (k: string | null | undefined): string => {
+  if (!k) return '無級'
+  const s = k.trim()
+  if (s.startsWith('正')) return s.slice(1)
+  return s
+}
+
 export const calcAge = (birthDate: string | null) => {
   if (!birthDate) return '-'
   const born = new Date(birthDate)

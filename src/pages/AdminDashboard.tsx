@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { supabase, Profile, resolveRole, canCertifyDan, canCertifyKyu, canScore, KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS } from '../lib/supabase'
+import { supabase, Profile, resolveRole, canCertifyDan, canCertifyKyu, canScore, KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu } from '../lib/supabase'
 import StudentDashboard from './StudentDashboard'
 
 // --- ユーティリティ ---
@@ -113,7 +113,7 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
       const k = (s.name || '') + (s.kyu || '') + (s.branch || '')
       return k.toLowerCase().includes(searchQuery.toLowerCase()) && (branchFilter === 'すべて' || s.branch === branchFilter)
     });
-    return result.sort((a, b) => sortBy === 'kyu' ? allKyuList.indexOf(b.kyu || '無級') - allKyuList.indexOf(a.kyu || '無級') : (a.name || '').localeCompare(b.name || '', 'ja'));
+    return result.sort((a, b) => sortBy === 'kyu' ? allKyuList.indexOf(normalizeKyu(b.kyu)) - allKyuList.indexOf(normalizeKyu(a.kyu)) : (a.name || '').localeCompare(b.name || '', 'ja'));
   }, [students, searchQuery, branchFilter, sortBy])
 
   return (
@@ -163,7 +163,7 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
               <div className="flex justify-between items-center">
                 <div>
                   <p className="font-black text-sm">{s.name}</p>
-                  <p className="text-[9px] font-bold text-orange-500 uppercase">{s.kyu}</p>
+                  <p className="text-[9px] font-bold text-orange-500 uppercase">{normalizeKyu(s.kyu)}</p>
                 </div>
                 <span className="text-[8px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-400 font-bold">{s.branch}</span>
               </div>
@@ -190,7 +190,7 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
   const adminRole = resolveRole(adminProfile);
   const [form, setForm] = useState({
     name: student.name || '',
-    kyu: student.kyu || '無級',
+    kyu: normalizeKyu(student.kyu),
     branch: student.branch || '',
     birthday: student.birthday || '',
     joined_at: student.joined_at || '',
@@ -332,7 +332,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const [loading, setLoading] = useState(true)
   const [student, setStudent] = useState(initialStudent);
 
-  const currentKyu = student.kyu || '無級';
+  const currentKyu = normalizeKyu(student.kyu);
   const currentBelt = getBeltForGrade(currentKyu);
   const currentBeltColor = BELT_COLORS[currentBelt];
 

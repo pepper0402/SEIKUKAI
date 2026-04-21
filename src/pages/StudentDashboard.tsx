@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { supabase, Profile } from '../lib/supabase'
+import { supabase, Profile, normalizeKyu } from '../lib/supabase'
 
 const calculateTrainingPeriod = (joinedDateStr: any) => {
   if (!joinedDateStr) return '未設定';
@@ -56,15 +56,16 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
   const [viewMode, setViewMode] = useState<'current' | 'history'>('current')
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
 
+  const currentKyu = useMemo(() => normalizeKyu(profile.kyu), [profile.kyu]);
   const isGeneral = useMemo(() => calculateAge(profile.birthday) >= 15, [profile.birthday]);
-  const beltName = useMemo(() => getBeltName(profile.kyu || '無級', isGeneral), [profile.kyu, isGeneral]);
+  const beltName = useMemo(() => getBeltName(currentKyu, isGeneral), [currentKyu, isGeneral]);
   const bc = BELT_COLORS[beltName] || BELT_COLORS['白帯'];
   const trainingPeriod = useMemo(() => calculateTrainingPeriod((profile as any).joined_at), [profile]);
 
   useEffect(() => {
     async function loadData() {
       setLoading(true)
-      const targetGrade = profile.kyu || '無級';
+      const targetGrade = currentKyu;
       const [{ data: criteriaData }, { data: scoresData }] = await Promise.all([
         supabase.from('criteria').select('*').eq('dan', targetGrade).order('id'),
         supabase.from('evaluations').select('*, criteria(*)').eq('student_id', profile.id),
@@ -77,7 +78,7 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
       setLoading(false);
     }
     loadData();
-  }, [profile.id, profile.kyu]);
+  }, [profile.id, currentKyu]);
 
   const totalScore = useMemo(() => currentCriteria.reduce((acc, c) => acc + gradeToScore(c.grade), 0), [currentCriteria]);
   const maxScore = currentCriteria.length * 10;
@@ -120,7 +121,7 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
             <div className="flex gap-2 flex-wrap">
               {[
                 { label: 'Belt', value: beltName },
-                { label: 'Grade', value: profile.kyu || '無級' },
+                { label: 'Grade', value: currentKyu },
                 { label: '修行歴', value: trainingPeriod },
               ].map(({ label, value }) => (
                 <div key={label} className="px-3 py-1.5 rounded-xl" style={{ backgroundColor: 'rgba(0,0,0,0.14)' }}>
