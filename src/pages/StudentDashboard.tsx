@@ -65,9 +65,9 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
   useEffect(() => {
     async function loadData() {
       setLoading(true)
-      const targetGrade = currentKyu;
+      const gradeVariants = [currentKyu, '正' + currentKyu];
       const [{ data: criteriaData }, { data: scoresData }] = await Promise.all([
-        supabase.from('criteria').select('*').eq('dan', targetGrade).order('id'),
+        supabase.from('criteria').select('*').in('dan', gradeVariants).order('id'),
         supabase.from('evaluations').select('*, criteria(*)').eq('student_id', profile.id),
       ]);
       setCurrentCriteria((criteriaData || []).map(c => ({
