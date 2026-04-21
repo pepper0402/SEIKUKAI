@@ -5,6 +5,29 @@ import StudentDashboard from './StudentDashboard'
 // --- ユーティリティ ---
 const allKyuList = KYU_OPTIONS.filter(k => k !== '')
 
+const BELT_GRADE_MAP: Record<string, string[]> = {
+  '白帯':      ['無級'],
+  '黄帯':      ['準10級', '10級', '準9級', '9級'],
+  '青帯':      ['準8級', '8級', '準7級', '7級'],
+  '橙帯/紫帯': ['準6級', '6級', '準5級', '5級'],
+  '緑帯':      ['準4級', '4級', '準3級', '3級'],
+  '茶帯':      ['準2級', '2級', '準1級', '1級'],
+  '黒帯':      ['初段', '弍段', '参段', '四段', '五段'],
+}
+
+const BELT_COLORS: Record<string, { bg: string; text: string; light: string }> = {
+  '白帯':      { bg: '#e8e8e8', text: '#1a1a1a', light: '#f5f5f5' },
+  '黄帯':      { bg: '#d4a800', text: '#1a1a1a', light: '#fef3c7' },
+  '青帯':      { bg: '#1a4fa0', text: '#ffffff', light: '#dbeafe' },
+  '橙帯/紫帯': { bg: '#c04a00', text: '#ffffff', light: '#ffedd5' },
+  '緑帯':      { bg: '#186a18', text: '#ffffff', light: '#dcfce7' },
+  '茶帯':      { bg: '#5c2a0a', text: '#ffffff', light: '#fef3e2' },
+  '黒帯':      { bg: '#0d0d0d', text: '#ffffff', light: '#e5e5e5' },
+}
+
+const getBeltForGrade = (kyu: string): string =>
+  Object.entries(BELT_GRADE_MAP).find(([, grades]) => grades.includes(kyu))?.[0] ?? '白帯'
+
 
 
 export default function AdminDashboard({ profile: adminProfile, onReload }: { profile: Profile; onReload?: () => void }) {
@@ -310,8 +333,24 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const [student, setStudent] = useState(initialStudent);
 
   const currentKyu = student.kyu || '無級';
+  const currentBelt = getBeltForGrade(currentKyu);
+  const currentBeltColor = BELT_COLORS[currentBelt];
 
+  const [viewBelt, setViewBelt] = useState(currentBelt);
   const [viewGrade, setViewGrade] = useState(currentKyu);
+
+  // 昇級後に帯・グレードタブを同期
+  useEffect(() => {
+    const belt = getBeltForGrade(currentKyu);
+    setViewBelt(belt);
+    setViewGrade(currentKyu);
+  }, [currentKyu]);
+
+  const handleBeltChange = (belt: string) => {
+    setViewBelt(belt);
+    const grades = BELT_GRADE_MAP[belt];
+    setViewGrade(grades.includes(currentKyu) ? currentKyu : grades[0]);
+  };
 
   // 閲覧中グレードの基準・評価を取得（表示・採点用）
   useEffect(() => {
@@ -370,96 +409,139 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
 
   return (
     <div className="max-w-2xl mx-auto pb-20">
-      <div className="bg-[#001f3f] rounded-[40px] p-6 md:p-8 text-white mb-8 shadow-2xl relative overflow-hidden">
+      {/* ヘッダー：帯カラーテーマ */}
+      <div
+        className="rounded-[40px] p-6 md:p-8 mb-6 shadow-2xl relative overflow-hidden"
+        style={{ backgroundColor: currentBeltColor.bg, color: currentBeltColor.text }}
+      >
+        {/* 背景装飾 */}
+        <div className="absolute top-0 right-0 text-[10rem] font-black italic opacity-[0.06] -mr-8 -mt-8 pointer-events-none select-none leading-none">
+          {currentBelt.slice(0, 1)}
+        </div>
+
         <div className="relative z-10 flex flex-wrap justify-between items-start gap-4">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-4">
               <h2 className="text-3xl font-black tracking-tighter">{student.name}</h2>
-              <button onClick={() => setShowPreview(true)} className="bg-white/10 hover:bg-white/20 text-white/60 px-3 py-1.5 rounded-full text-[9px] font-black border border-white/10 uppercase">Preview</button>
+              <button
+                onClick={() => setShowPreview(true)}
+                className="px-3 py-1.5 rounded-full text-[9px] font-black border uppercase"
+                style={{ backgroundColor: 'rgba(0,0,0,0.12)', borderColor: 'rgba(0,0,0,0.15)', color: currentBeltColor.text, opacity: 0.7 }}
+              >Preview</button>
             </div>
-            <div className="flex gap-4">
-              <div><p className="text-[10px] opacity-40 uppercase">Grade</p><p className="text-xl font-black text-orange-400">{currentKyu}</p></div>
-              <div><p className="text-[10px] opacity-40 uppercase">Pass</p><p className="text-xl font-black">80点以上</p></div>
+            <div className="flex gap-3 flex-wrap">
+              <div className="px-3 py-1.5 rounded-xl" style={{ backgroundColor: 'rgba(0,0,0,0.15)' }}>
+                <p className="text-[8px] font-black uppercase opacity-60 leading-none mb-0.5">Belt</p>
+                <p className="text-sm font-black leading-none">{currentBelt}</p>
+              </div>
+              <div className="px-3 py-1.5 rounded-xl" style={{ backgroundColor: 'rgba(0,0,0,0.15)' }}>
+                <p className="text-[8px] font-black uppercase opacity-60 leading-none mb-0.5">Grade</p>
+                <p className="text-sm font-black leading-none">{currentKyu}</p>
+              </div>
+              <div className="px-3 py-1.5 rounded-xl" style={{ backgroundColor: 'rgba(0,0,0,0.15)' }}>
+                <p className="text-[8px] font-black uppercase opacity-60 leading-none mb-0.5">Pass</p>
+                <p className="text-sm font-black leading-none">80点</p>
+              </div>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-[10px] opacity-40 tracking-widest uppercase">Score</p>
-            <p className={`text-6xl md:text-7xl font-black ${isEligible ? 'text-green-400' : 'text-white'}`}>{currentGradeScore}</p>
+            <p className="text-[9px] font-black uppercase tracking-widest opacity-40">Score</p>
+            <p className="text-6xl md:text-7xl font-black leading-none" style={{ color: isEligible ? '#4ade80' : currentBeltColor.text }}>{currentGradeScore}</p>
             <p className="text-[9px] opacity-30">/ {currentGradeMax || 100}</p>
           </div>
         </div>
 
-        <div className={`grid gap-3 mt-8 relative z-10 ${showAnyPromotion && canEdit ? 'grid-cols-3' : showAnyPromotion ? 'grid-cols-2' : canEdit ? 'grid-cols-1' : 'hidden'}`}>
+        <div className={`grid gap-3 mt-6 relative z-10 ${showAnyPromotion && canEdit ? 'grid-cols-3' : showAnyPromotion ? 'grid-cols-2' : canEdit ? 'grid-cols-1' : 'hidden'}`}>
           {showPromoteKyu && (
-            <button
-              onClick={() => handlePromote(1)}
-              className={`py-4 rounded-2xl font-black uppercase text-[10px] ${isEligible ? 'bg-orange-500 text-white' : 'bg-orange-500/60 text-white/80'}`}
-            >
-              昇級確定
-            </button>
+            <button onClick={() => handlePromote(1)}
+              className="py-3.5 rounded-2xl font-black text-[10px] text-white transition-all"
+              style={{ backgroundColor: isEligible ? '#f97316' : 'rgba(249,115,22,0.5)' }}
+            >昇級確定</button>
           )}
           {showPromoteKyu && (
-            <button
-              onClick={() => handlePromote(2)}
-              className={`py-4 rounded-2xl font-black uppercase text-[10px] ${isEligible ? 'bg-orange-600 text-white' : 'bg-orange-600/60 text-white/80'}`}
-            >
-              1級飛び級
-            </button>
+            <button onClick={() => handlePromote(2)}
+              className="py-3.5 rounded-2xl font-black text-[10px] text-white transition-all"
+              style={{ backgroundColor: isEligible ? '#ea580c' : 'rgba(234,88,12,0.5)' }}
+            >1級飛び級</button>
           )}
           {showPromoteDan && !showPromoteKyu && (
-            <button
-              onClick={() => handlePromote(1)}
-              className={`py-4 rounded-2xl font-black uppercase text-[10px] col-span-2 ${isEligible ? 'bg-purple-700 text-white' : 'bg-purple-700/60 text-white/80'}`}
-            >
-              昇段確定
-            </button>
+            <button onClick={() => handlePromote(1)}
+              className="py-3.5 rounded-2xl font-black text-[10px] text-white col-span-2 transition-all"
+              style={{ backgroundColor: isEligible ? '#7c3aed' : 'rgba(124,58,237,0.5)' }}
+            >昇段確定</button>
           )}
           {canEdit && (
-            <button onClick={() => setShowEdit(true)} className="py-4 bg-white/20 text-white rounded-2xl font-black uppercase text-[10px]">
-              データ修正
-            </button>
+            <button onClick={() => setShowEdit(true)}
+              className="py-3.5 rounded-2xl font-black text-[10px]"
+              style={{ backgroundColor: 'rgba(0,0,0,0.2)', color: currentBeltColor.text }}
+            >データ修正</button>
           )}
         </div>
 
-        {/* 指導員向け：採点のみ可能の表示 */}
         {!showAnyPromotion && !canEdit && (
-          <div className="mt-8 relative z-10">
-            <p className="text-[9px] text-white/30 font-black uppercase tracking-widest text-center">採点モード（昇級・データ修正は管理者が行います）</p>
+          <div className="mt-6 relative z-10">
+            <p className="text-[9px] font-black uppercase tracking-widest text-center opacity-30">採点モード</p>
           </div>
         )}
       </div>
 
+      {/* 帯タブ */}
+      <div className="flex gap-2 overflow-x-auto no-scrollbar mb-3 pb-1">
+        {Object.keys(BELT_GRADE_MAP).map(belt => {
+          const bc = BELT_COLORS[belt];
+          const isSelected = belt === viewBelt;
+          const isCurrent = belt === currentBelt;
+          return (
+            <button key={belt} onClick={() => handleBeltChange(belt)}
+              className="px-4 py-3 rounded-2xl text-[10px] font-black whitespace-nowrap border-2 transition-all"
+              style={isSelected
+                ? { backgroundColor: bc.bg, color: bc.text, borderColor: 'transparent', transform: 'scale(1.05)' }
+                : { backgroundColor: '#fff', color: '#9ca3af', borderColor: '#f3f4f6' }
+              }
+            >
+              {isCurrent ? `▶ ${belt}` : belt}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 級サブタブ */}
       <div className="flex gap-2 overflow-x-auto no-scrollbar mb-6 pb-1">
-        {allKyuList.map(g => (
-          <button
-            key={g}
-            onClick={() => setViewGrade(g)}
-            className={`px-4 py-2.5 rounded-xl text-[10px] font-black whitespace-nowrap border transition-all ${
-              viewGrade === g
-                ? g === currentKyu
-                  ? 'bg-[#001f3f] text-white shadow-lg border-transparent scale-105'
-                  : 'bg-gray-700 text-white shadow border-transparent scale-105'
-                : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'
-            }`}
-          >
-            {g === currentKyu ? `▶ ${g}` : g}
-          </button>
-        ))}
+        {(BELT_GRADE_MAP[viewBelt] || []).map(grade => {
+          const bc = BELT_COLORS[viewBelt];
+          const isSelected = grade === viewGrade;
+          const isCurrent = grade === currentKyu;
+          return (
+            <button key={grade} onClick={() => setViewGrade(grade)}
+              className="px-4 py-2.5 rounded-xl text-[10px] font-black whitespace-nowrap border transition-all"
+              style={isSelected
+                ? { backgroundColor: bc.bg, color: bc.text, borderColor: 'transparent' }
+                : { backgroundColor: '#fff', color: isCurrent ? bc.bg : '#9ca3af', borderColor: isCurrent ? bc.bg : '#f3f4f6' }
+              }
+            >
+              {isCurrent ? `▶ ${grade}` : grade}
+            </button>
+          );
+        })}
       </div>
 
       <div className="space-y-4">
         {loading ? (
           <div className="text-center py-20 animate-pulse text-gray-300 font-black italic">LOADING...</div>
         ) : (
-          criteria.map(c => (
-            <div key={c.id} className="bg-white p-6 rounded-[35px] shadow-sm border border-gray-100">
+          criteria.map(c => {
+            const vbc = BELT_COLORS[viewBelt];
+            return (
+            <div key={c.id} className="bg-white p-5 rounded-[28px] shadow-sm border border-gray-100">
               <div className="flex justify-between mb-4">
                 <div className="flex-1">
-                  <span className="text-[9px] font-black text-gray-300 uppercase block">{c.examination_type}</span>
+                  <span className="text-[9px] font-black uppercase block mb-0.5" style={{ color: vbc.bg }}>{c.examination_type}</span>
                   <p className="text-sm font-bold text-[#001f3f] leading-snug">{c.examination_content}</p>
-                  {c.is_required && <span className="text-[8px] font-black text-orange-500 uppercase mt-1 block">★ 必須項目</span>}
+                  {c.is_required && (
+                    <span className="text-[8px] font-black uppercase mt-1 inline-block px-2 py-0.5 rounded-md text-white" style={{ backgroundColor: vbc.bg }}>★ 必須</span>
+                  )}
                 </div>
-                {c.video_url && <a href={c.video_url} target="_blank" rel="noreferrer" className="w-8 h-8 flex items-center justify-center bg-gray-50 text-orange-500 rounded-lg border border-gray-100 text-xs">▶️</a>}
+                {c.video_url && <a href={c.video_url} target="_blank" rel="noreferrer" className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-100 text-xs ml-3" style={{ backgroundColor: vbc.light, color: vbc.bg }}>▶</a>}
               </div>
               {canScore(adminRole) ? (
                 <div className="grid grid-cols-4 gap-2">
@@ -470,7 +552,12 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
                         setCurrentGradeEvals((prev: any[]) => prev.map((item: any) => item.id === c.id ? { ...item, grade: g } : item));
                       }
                       supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: g }, { onConflict: 'student_id,criterion_id' }).then();
-                    }} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg' : 'bg-gray-50 text-gray-300 hover:bg-gray-100'}`}>{g}</button>
+                    }}
+                    className="py-3 rounded-xl font-black transition-all"
+                    style={c.grade === g
+                      ? { backgroundColor: vbc.bg, color: vbc.text }
+                      : { backgroundColor: '#f9fafb', color: '#d1d5db' }
+                    }>{g}</button>
                   ))}
                 </div>
               ) : (
@@ -479,7 +566,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
                 </div>
               )}
             </div>
-          ))
+          ); })
         )}
       </div>
 
