@@ -185,6 +185,13 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
   )
 }
 
+// ISO日時文字列を YYYY-MM-DD に整形（HTML date input 用）
+const toDateInput = (v: string | null | undefined): string => {
+  if (!v) return '';
+  const s = String(v);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+};
+
 // --- 編集パネル ---
 function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; adminProfile: Profile; onClose: () => void; onSave: (updated: any) => void }) {
   const adminRole = resolveRole(adminProfile);
@@ -192,12 +199,28 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
     name: student.name || '',
     kyu: normalizeKyu(student.kyu),
     branch: student.branch || '',
-    birthday: student.birthday || '',
-    joined_at: student.joined_at || '',
-    gakuinen: student.gakuinen || '',
+    birthday: toDateInput(student.birthday),
+    joined_at: toDateInput(student.joined_at),
+    gakuinen: (student.gakuinen || '').trim(),
     gohi: student.gohi || '',
   });
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const handlePasswordReset = async () => {
+    if (!student.login_email) {
+      alert('この会員にはログイン用メールアドレスが登録されていません。');
+      return;
+    }
+    if (!confirm(`${student.login_email} にパスワードリセット用のメールを送信します。よろしいですか？`)) return;
+    setResetting(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(student.login_email, {
+      redirectTo: `${window.location.origin}/`,
+    });
+    setResetting(false);
+    if (error) alert('送信に失敗しました: ' + error.message);
+    else alert('パスワードリセット用メールを送信しました。');
+  };
 
   const gradeOptions = adminRole === 'master'
     ? KYU_OPTIONS.filter(k => k !== '')
@@ -303,6 +326,21 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
               className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]"
             />
           </div>
+        </div>
+
+        {/* パスワードリセット（管理者操作） */}
+        <div className="mt-6 pt-6 border-t border-gray-100">
+          <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-2">アカウント操作</label>
+          <button
+            onClick={handlePasswordReset}
+            disabled={resetting || !student.login_email}
+            className="w-full py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-2xl text-xs font-black hover:bg-orange-100 disabled:opacity-50"
+          >
+            {resetting ? '送信中...' : 'パスワードリセットメールを送信'}
+          </button>
+          {student.login_email && (
+            <p className="text-[10px] text-gray-400 mt-2 font-bold">送信先: {student.login_email}</p>
+          )}
         </div>
 
         <div className="flex gap-3 mt-8">
