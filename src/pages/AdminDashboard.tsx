@@ -65,22 +65,36 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
         const text = event.target.result;
         const rows = text.split('\n').slice(1).filter((r: string) => r.trim());
         if (type === 'students') {
-          // CSV形式: name, kyu, branch, birthday, login_email
-          let ok = 0, skipped = 0;
+          // CSV形式: 支部, 氏, 名, ヨミガナ, 性別, 入会日, 生年月日, 級/段, メールアドレス, パスワード
+          // 2008/06/04 や 1972/1/5 形式の日付を YYYY-MM-DD に変換
+          const toISODate = (s: string): string | null => {
+            if (!s) return null;
+            const m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+            if (!m) return null;
+            const [, y, mo, d] = m;
+            return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+          };
+          let ok = 0, skipped = 0, errors: string[] = [];
           for (const row of rows) {
-            const [name, kyu, branch, birthday, login_email] = row.split(',').map((s: string) => s?.trim() || '');
+            const cols = row.split(',').map((s: string) => s?.trim() || '');
+            if (cols.length < 9) { skipped++; continue; }
+            const [branch, sei, mei, , , joined_at_raw, birthday_raw, kyu, login_email] = cols;
+            const name = `${sei} ${mei}`.trim();
             if (!name || !login_email) { skipped++; continue; }
             const { error } = await supabase.from('profiles').upsert({
               name,
               kyu: kyu || null,
               branch: branch || null,
-              birthday: birthday || null,
-              login_email,
+              birthday: toISODate(birthday_raw),
+              joined_at: toISODate(joined_at_raw),
+              login_email: login_email.toLowerCase(),
               is_admin: false,
             }, { onConflict: 'login_email' });
-            if (error) skipped++; else ok++;
+            if (error) { skipped++; errors.push(`${name}: ${error.message}`); }
+            else ok++;
           }
-          alert(`インポート完了: ${ok}件更新/追加 / スキップ${skipped}件`);
+          const errMsg = errors.length > 0 ? `\n\n最初のエラー:\n${errors.slice(0, 3).join('\n')}` : '';
+          alert(`インポート完了: ${ok}件更新/追加 / スキップ${skipped}件${errMsg}`);
           loadStudents();
         } else {
           // Drill_Master.csv: drill_no, belt_ja, grade_ja, category, item_ja, item_en, is_required, video_url, notes
