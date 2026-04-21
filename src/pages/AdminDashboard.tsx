@@ -381,6 +381,16 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const currentGradeMax = currentGradeEvals.length * 10;
   const isEligible = currentGradeEvals.length > 0 && currentGradeScore >= 80;
 
+  const groupedCriteria: [string, any[]][] = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    criteria.forEach((c: any) => {
+      const key = c.examination_type || 'その他';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(c);
+    });
+    return Object.entries(groups);
+  }, [criteria]);
+
   const handlePromote = async (step: number = 1) => {
     if (!isEligible) {
       alert(`合格点（80点）に達していません。\n現在の点数：${currentGradeScore}点 / ${currentGradeMax}点`);
@@ -407,168 +417,221 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const showAnyPromotion = showPromoteKyu || showPromoteDan;
   const canEdit = adminRole === 'master' || adminRole === 'branch';
 
+  const currentKyuIdx = allKyuList.indexOf(currentKyu);
+  const isGradeAccessible = (grade: string) => allKyuList.indexOf(grade) <= currentKyuIdx;
+  const isBeltAccessible = (belt: string) => BELT_GRADE_MAP[belt].some(g => isGradeAccessible(g));
+  const vbc = BELT_COLORS[viewBelt];
+  const progressPct = currentGradeMax > 0 ? Math.min((currentGradeScore / currentGradeMax) * 100, 100) : 0;
+
   return (
     <div className="max-w-2xl mx-auto pb-20">
-      {/* ヘッダー：帯カラーテーマ */}
-      <div
-        className="rounded-[40px] p-6 md:p-8 mb-6 shadow-2xl relative overflow-hidden"
-        style={{ backgroundColor: currentBeltColor.bg, color: currentBeltColor.text }}
-      >
-        {/* 背景装飾 */}
-        <div className="absolute top-0 right-0 text-[10rem] font-black italic opacity-[0.06] -mr-8 -mt-8 pointer-events-none select-none leading-none">
+
+      {/* ===== ヘッダーカード ===== */}
+      <div className="rounded-[28px] p-6 mb-4 shadow-xl relative overflow-hidden"
+        style={{ backgroundColor: currentBeltColor.bg, color: currentBeltColor.text }}>
+        <div className="absolute right-0 top-0 text-[8rem] font-black italic opacity-[0.06] -mr-2 -mt-2 pointer-events-none select-none leading-none">
           {currentBelt.slice(0, 1)}
         </div>
-
-        <div className="relative z-10 flex flex-wrap justify-between items-start gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-4">
-              <h2 className="text-3xl font-black tracking-tighter">{student.name}</h2>
-              <button
-                onClick={() => setShowPreview(true)}
-                className="px-3 py-1.5 rounded-full text-[9px] font-black border uppercase"
-                style={{ backgroundColor: 'rgba(0,0,0,0.12)', borderColor: 'rgba(0,0,0,0.15)', color: currentBeltColor.text, opacity: 0.7 }}
-              >Preview</button>
+        <div className="relative z-10">
+          {/* 名前行 */}
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <p className="text-[8px] font-black uppercase tracking-[0.25em] opacity-40 mb-0.5">Student</p>
+              <h2 className="text-2xl font-black tracking-tight">{student.name}</h2>
             </div>
-            <div className="flex gap-3 flex-wrap">
-              <div className="px-3 py-1.5 rounded-xl" style={{ backgroundColor: 'rgba(0,0,0,0.15)' }}>
-                <p className="text-[8px] font-black uppercase opacity-60 leading-none mb-0.5">Belt</p>
-                <p className="text-sm font-black leading-none">{currentBelt}</p>
+            <button onClick={() => setShowPreview(true)}
+              className="text-[9px] font-black border rounded-full px-3 py-1.5 uppercase opacity-50"
+              style={{ borderColor: 'rgba(0,0,0,0.2)', color: currentBeltColor.text }}>
+              Preview
+            </button>
+          </div>
+
+          {/* スコア + バッジ */}
+          <div className="flex items-end justify-between mb-4">
+            <div>
+              <div className="flex gap-2 mb-2">
+                <span className="text-[9px] font-black px-2.5 py-1 rounded-lg" style={{ backgroundColor: 'rgba(0,0,0,0.18)' }}>{currentBelt}</span>
+                <span className="text-[9px] font-black px-2.5 py-1 rounded-lg" style={{ backgroundColor: 'rgba(0,0,0,0.18)' }}>{currentKyu}</span>
               </div>
-              <div className="px-3 py-1.5 rounded-xl" style={{ backgroundColor: 'rgba(0,0,0,0.15)' }}>
-                <p className="text-[8px] font-black uppercase opacity-60 leading-none mb-0.5">Grade</p>
-                <p className="text-sm font-black leading-none">{currentKyu}</p>
-              </div>
-              <div className="px-3 py-1.5 rounded-xl" style={{ backgroundColor: 'rgba(0,0,0,0.15)' }}>
-                <p className="text-[8px] font-black uppercase opacity-60 leading-none mb-0.5">Pass</p>
-                <p className="text-sm font-black leading-none">80点</p>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-5xl font-black leading-none" style={{ color: isEligible ? '#4ade80' : currentBeltColor.text }}>{currentGradeScore}</span>
+                <span className="text-sm font-black opacity-25">/ {currentGradeMax || '—'}</span>
               </div>
             </div>
-          </div>
-          <div className="text-right">
-            <p className="text-[9px] font-black uppercase tracking-widest opacity-40">Score</p>
-            <p className="text-6xl md:text-7xl font-black leading-none" style={{ color: isEligible ? '#4ade80' : currentBeltColor.text }}>{currentGradeScore}</p>
-            <p className="text-[9px] opacity-30">/ {currentGradeMax || 100}</p>
-          </div>
-        </div>
-
-        <div className={`grid gap-3 mt-6 relative z-10 ${showAnyPromotion && canEdit ? 'grid-cols-3' : showAnyPromotion ? 'grid-cols-2' : canEdit ? 'grid-cols-1' : 'hidden'}`}>
-          {showPromoteKyu && (
-            <button onClick={() => handlePromote(1)}
-              className="py-3.5 rounded-2xl font-black text-[10px] text-white transition-all"
-              style={{ backgroundColor: isEligible ? '#f97316' : 'rgba(249,115,22,0.5)' }}
-            >昇級確定</button>
-          )}
-          {showPromoteKyu && (
-            <button onClick={() => handlePromote(2)}
-              className="py-3.5 rounded-2xl font-black text-[10px] text-white transition-all"
-              style={{ backgroundColor: isEligible ? '#ea580c' : 'rgba(234,88,12,0.5)' }}
-            >1級飛び級</button>
-          )}
-          {showPromoteDan && !showPromoteKyu && (
-            <button onClick={() => handlePromote(1)}
-              className="py-3.5 rounded-2xl font-black text-[10px] text-white col-span-2 transition-all"
-              style={{ backgroundColor: isEligible ? '#7c3aed' : 'rgba(124,58,237,0.5)' }}
-            >昇段確定</button>
-          )}
-          {canEdit && (
-            <button onClick={() => setShowEdit(true)}
-              className="py-3.5 rounded-2xl font-black text-[10px]"
-              style={{ backgroundColor: 'rgba(0,0,0,0.2)', color: currentBeltColor.text }}
-            >データ修正</button>
-          )}
-        </div>
-
-        {!showAnyPromotion && !canEdit && (
-          <div className="mt-6 relative z-10">
-            <p className="text-[9px] font-black uppercase tracking-widest text-center opacity-30">採点モード</p>
-          </div>
-        )}
-      </div>
-
-      {/* 帯タブ */}
-      <div className="flex gap-2 overflow-x-auto no-scrollbar mb-3 pb-1">
-        {Object.keys(BELT_GRADE_MAP).map(belt => {
-          const bc = BELT_COLORS[belt];
-          const isSelected = belt === viewBelt;
-          const isCurrent = belt === currentBelt;
-          return (
-            <button key={belt} onClick={() => handleBeltChange(belt)}
-              className="px-4 py-3 rounded-2xl text-[10px] font-black whitespace-nowrap border-2 transition-all"
-              style={isSelected
-                ? { backgroundColor: bc.bg, color: bc.text, borderColor: 'transparent', transform: 'scale(1.05)' }
-                : { backgroundColor: '#fff', color: '#9ca3af', borderColor: '#f3f4f6' }
-              }
-            >
-              {isCurrent ? `▶ ${belt}` : belt}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 級サブタブ */}
-      <div className="flex gap-2 overflow-x-auto no-scrollbar mb-6 pb-1">
-        {(BELT_GRADE_MAP[viewBelt] || []).map(grade => {
-          const bc = BELT_COLORS[viewBelt];
-          const isSelected = grade === viewGrade;
-          const isCurrent = grade === currentKyu;
-          return (
-            <button key={grade} onClick={() => setViewGrade(grade)}
-              className="px-4 py-2.5 rounded-xl text-[10px] font-black whitespace-nowrap border transition-all"
-              style={isSelected
-                ? { backgroundColor: bc.bg, color: bc.text, borderColor: 'transparent' }
-                : { backgroundColor: '#fff', color: isCurrent ? bc.bg : '#9ca3af', borderColor: isCurrent ? bc.bg : '#f3f4f6' }
-              }
-            >
-              {isCurrent ? `▶ ${grade}` : grade}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="space-y-4">
-        {loading ? (
-          <div className="text-center py-20 animate-pulse text-gray-300 font-black italic">LOADING...</div>
-        ) : (
-          criteria.map(c => {
-            const vbc = BELT_COLORS[viewBelt];
-            return (
-            <div key={c.id} className="bg-white p-5 rounded-[28px] shadow-sm border border-gray-100">
-              <div className="flex justify-between mb-4">
-                <div className="flex-1">
-                  <span className="text-[9px] font-black uppercase block mb-0.5" style={{ color: vbc.bg }}>{c.examination_type}</span>
-                  <p className="text-sm font-bold text-[#001f3f] leading-snug">{c.examination_content}</p>
-                  {c.is_required && (
-                    <span className="text-[8px] font-black uppercase mt-1 inline-block px-2 py-0.5 rounded-md text-white" style={{ backgroundColor: vbc.bg }}>★ 必須</span>
-                  )}
-                </div>
-                {c.video_url && <a href={c.video_url} target="_blank" rel="noreferrer" className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-100 text-xs ml-3" style={{ backgroundColor: vbc.light, color: vbc.bg }}>▶</a>}
+            {isEligible ? (
+              <div className="px-3 py-2 rounded-2xl" style={{ backgroundColor: 'rgba(74,222,128,0.18)', border: '1.5px solid rgba(74,222,128,0.4)' }}>
+                <p className="text-[9px] font-black text-green-400 uppercase tracking-wide leading-none">合格圏内</p>
               </div>
-              {canScore(adminRole) ? (
-                <div className="grid grid-cols-4 gap-2">
-                  {['A', 'B', 'C', 'D'].map(g => (
-                    <button key={g} onClick={() => {
-                      setCriteria(prev => prev.map((item: any) => item.id === c.id ? { ...item, grade: g } : item));
-                      if (viewGrade === currentKyu) {
-                        setCurrentGradeEvals((prev: any[]) => prev.map((item: any) => item.id === c.id ? { ...item, grade: g } : item));
-                      }
-                      supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: g }, { onConflict: 'student_id,criterion_id' }).then();
-                    }}
-                    className="py-3 rounded-xl font-black transition-all"
-                    style={c.grade === g
-                      ? { backgroundColor: vbc.bg, color: vbc.text }
-                      : { backgroundColor: '#f9fafb', color: '#d1d5db' }
-                    }>{g}</button>
-                  ))}
-                </div>
-              ) : (
-                <div className={`py-3 rounded-xl font-black text-center text-lg ${c.grade === 'A' ? 'bg-orange-50 text-orange-600' : c.grade === 'B' ? 'bg-slate-50 text-slate-800' : c.grade === 'C' ? 'bg-gray-50 text-gray-600' : 'bg-gray-50 text-gray-300'}`}>
-                  {c.grade}
-                </div>
+            ) : (
+              <div className="text-right opacity-40">
+                <p className="text-[7px] font-black uppercase tracking-widest">あと</p>
+                <p className="text-xl font-black leading-none">{Math.max(0, 80 - currentGradeScore)}<span className="text-[9px] ml-0.5">点</span></p>
+              </div>
+            )}
+          </div>
+
+          {/* プログレスバー */}
+          <div className="mb-4">
+            <div className="relative h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(0,0,0,0.18)' }}>
+              <div className="h-full rounded-full transition-all duration-700"
+                style={{ width: `${progressPct}%`, backgroundColor: isEligible ? '#4ade80' : 'rgba(255,255,255,0.55)' }} />
+              {currentGradeMax > 0 && (
+                <div className="absolute top-0 h-full w-px" style={{ left: `${Math.min((80 / currentGradeMax) * 100, 100)}%`, backgroundColor: currentBeltColor.text, opacity: 0.5 }} />
               )}
             </div>
-          ); })
-        )}
+            <div className="flex justify-between text-[7px] font-black mt-1 opacity-35">
+              <span>0</span><span>合格 80点</span><span>{currentGradeMax > 0 ? `満点 ${currentGradeMax}` : ''}</span>
+            </div>
+          </div>
+
+          {/* アクションボタン */}
+          {(showAnyPromotion || canEdit) && (
+            <div className={`grid gap-2 ${showAnyPromotion && canEdit ? 'grid-cols-3' : showAnyPromotion ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {showPromoteKyu && (
+                <button onClick={() => handlePromote(1)}
+                  className="py-3 rounded-2xl font-black text-[11px] text-white"
+                  style={{ backgroundColor: isEligible ? '#f97316' : 'rgba(249,115,22,0.3)' }}>昇級確定</button>
+              )}
+              {showPromoteKyu && (
+                <button onClick={() => handlePromote(2)}
+                  className="py-3 rounded-2xl font-black text-[11px] text-white"
+                  style={{ backgroundColor: isEligible ? '#ea580c' : 'rgba(234,88,12,0.3)' }}>1級飛び級</button>
+              )}
+              {showPromoteDan && !showPromoteKyu && (
+                <button onClick={() => handlePromote(1)}
+                  className="py-3 rounded-2xl font-black text-[11px] text-white col-span-2"
+                  style={{ backgroundColor: isEligible ? '#7c3aed' : 'rgba(124,58,237,0.3)' }}>昇段確定</button>
+              )}
+              {canEdit && (
+                <button onClick={() => setShowEdit(true)}
+                  className="py-3 rounded-2xl font-black text-[11px]"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.18)', color: currentBeltColor.text }}>データ修正</button>
+              )}
+            </div>
+          )}
+          {!showAnyPromotion && !canEdit && (
+            <p className="text-center text-[9px] font-black uppercase tracking-widest opacity-25">採点モード</p>
+          )}
+        </div>
       </div>
+
+      {/* ===== ナビゲーション（帯 + 級） ===== */}
+      <div className="bg-white rounded-[22px] p-4 shadow-sm border border-gray-100 mb-4">
+        {/* 帯タブ */}
+        <p className="text-[8px] font-black text-gray-300 uppercase tracking-widest mb-2">Belt</p>
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-3">
+          {Object.keys(BELT_GRADE_MAP).map(belt => {
+            const bc = BELT_COLORS[belt];
+            const isSelected = belt === viewBelt;
+            const isCurrent = belt === currentBelt;
+            const isLocked = !isBeltAccessible(belt);
+            return (
+              <button key={belt}
+                onClick={() => !isLocked && handleBeltChange(belt)}
+                className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[10px] font-black whitespace-nowrap border-2 transition-all ${isLocked ? 'opacity-20 cursor-not-allowed' : 'cursor-pointer'}`}
+                style={isSelected && !isLocked
+                  ? { backgroundColor: bc.bg, color: bc.text, borderColor: 'transparent' }
+                  : { backgroundColor: '#fafafa', color: '#a0aec0', borderColor: '#f0f0f0' }}
+              >
+                {isLocked
+                  ? <span className="text-[9px]">🔒</span>
+                  : <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: isSelected ? bc.text : bc.bg, opacity: isSelected ? 0.5 : 1 }} />
+                }
+                {isCurrent && !isLocked ? `▶ ${belt}` : belt}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 級サブタブ */}
+        <p className="text-[8px] font-black text-gray-300 uppercase tracking-widest mb-2">Grade</p>
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+          {(BELT_GRADE_MAP[viewBelt] || []).map(grade => {
+            const isSelected = grade === viewGrade;
+            const isCurrent = grade === currentKyu;
+            const isLocked = !isGradeAccessible(grade);
+            return (
+              <button key={grade}
+                onClick={() => !isLocked && setViewGrade(grade)}
+                className={`px-3.5 py-2.5 rounded-xl text-[10px] font-black whitespace-nowrap border transition-all ${isLocked ? 'opacity-20 cursor-not-allowed' : ''}`}
+                style={isSelected && !isLocked
+                  ? { backgroundColor: vbc.bg, color: vbc.text, borderColor: 'transparent' }
+                  : { backgroundColor: isCurrent ? vbc.light : '#fafafa', color: isCurrent && !isSelected ? vbc.bg : '#a0aec0', borderColor: isCurrent && !isSelected ? vbc.bg + '60' : '#f0f0f0' }}
+              >
+                {isLocked ? '🔒' : isCurrent ? `▶ ${grade}` : grade}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ===== 審査基準リスト ===== */}
+      {loading ? (
+        <div className="text-center py-16 text-gray-200 font-black italic animate-pulse">LOADING...</div>
+      ) : criteria.length === 0 ? (
+        <div className="bg-white rounded-[22px] p-10 text-center border-2 border-dashed border-gray-100">
+          <p className="text-[11px] font-black text-gray-300 uppercase tracking-widest">審査基準データなし</p>
+          <p className="text-[10px] text-gray-200 mt-1">CSVをインポートしてください</p>
+        </div>
+      ) : (
+        <div>
+          {groupedCriteria.map(([type, items]) => (
+            <div key={type} className="mb-5">
+              {/* カテゴリヘッダー */}
+              <div className="flex items-center gap-2 mb-2 px-1">
+                <span className="text-[9px] font-black text-white px-3 py-1 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: vbc.bg }}>{type}</span>
+                <div className="flex-1 h-px" style={{ backgroundColor: vbc.bg, opacity: 0.12 }} />
+                <span className="text-[8px] font-black text-gray-300 flex-shrink-0">{items.length}項目</span>
+              </div>
+              {/* カード群 */}
+              <div className="space-y-2">
+                {items.map((c: any) => (
+                  <div key={c.id} className="bg-white rounded-[18px] p-4 shadow-sm border border-gray-50">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1 pr-2">
+                        <p className="text-[13px] font-bold text-gray-800 leading-snug">{c.examination_content}</p>
+                        {c.is_required && (
+                          <span className="inline-block mt-1.5 text-[8px] font-black text-white px-2 py-0.5 rounded-md"
+                            style={{ backgroundColor: vbc.bg }}>★ 必須</span>
+                        )}
+                      </div>
+                      {c.video_url && (
+                        <a href={c.video_url} target="_blank" rel="noreferrer"
+                          className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black border ml-2"
+                          style={{ backgroundColor: vbc.light, color: vbc.bg, borderColor: vbc.bg + '20' }}>▶</a>
+                      )}
+                    </div>
+                    {canScore(adminRole) ? (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[{ g: 'A', pt: '10' }, { g: 'B', pt: '6' }, { g: 'C', pt: '3' }, { g: 'D', pt: '0' }].map(({ g, pt }) => (
+                          <button key={g} onClick={() => {
+                            setCriteria((prev: any[]) => prev.map((item: any) => item.id === c.id ? { ...item, grade: g } : item));
+                            if (viewGrade === currentKyu) {
+                              setCurrentGradeEvals((prev: any[]) => prev.map((item: any) => item.id === c.id ? { ...item, grade: g } : item));
+                            }
+                            supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: g }, { onConflict: 'student_id,criterion_id' }).then();
+                          }}
+                          className="py-2.5 rounded-xl flex flex-col items-center justify-center transition-all"
+                          style={c.grade === g
+                            ? { backgroundColor: vbc.bg, color: vbc.text }
+                            : { backgroundColor: '#f5f5f5', color: '#c0c0c0' }}>
+                            <span className="text-[15px] font-black leading-none">{g}</span>
+                            <span className="text-[7px] font-bold mt-0.5 opacity-60">{pt}pt</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-3 rounded-xl font-black text-center text-xl"
+                        style={{ backgroundColor: vbc.light, color: vbc.bg }}>{c.grade}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {showEdit && (
         <EditPanel
