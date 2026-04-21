@@ -329,12 +329,13 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
     fetchEvals()
   }, [student.id, viewBelt])
 
-  // A=10, B=6, C=3, D=0（10項目×10点=100点満点）
+  // A=10, B=6, C=3, D=0
   const totalScore = useMemo(() =>
     criteria.reduce((acc, c) => acc + (c.grade === 'A' ? 10 : c.grade === 'B' ? 6 : c.grade === 'C' ? 3 : 0), 0),
     [criteria]
   );
-  const isScoreReady = totalScore >= 80;
+  const maxScore = criteria.length * 10;
+  const isScoreReady = criteria.length > 0 && totalScore >= 80;
 
   const handlePromote = async (step: number = 1) => {
     const currentIdx = allKyuList.indexOf(currentKyu);
@@ -378,7 +379,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
           <div className="text-right">
             <p className="text-[10px] opacity-40 tracking-widest uppercase">Score</p>
             <p className={`text-6xl md:text-7xl font-black ${isScoreReady ? 'text-green-400' : 'text-white'}`}>{totalScore}</p>
-            <p className="text-[9px] opacity-30">/ 100</p>
+            <p className="text-[9px] opacity-30">/ {maxScore || 100}</p>
           </div>
         </div>
 
@@ -386,8 +387,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
           {showPromoteKyu && (
             <button
               onClick={() => handlePromote(1)}
-              disabled={!isScoreReady}
-              className={`py-4 rounded-2xl font-black uppercase text-[10px] ${isScoreReady ? 'bg-orange-500 text-white' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}
+              className={`py-4 rounded-2xl font-black uppercase text-[10px] ${isScoreReady ? 'bg-orange-500 text-white' : 'bg-orange-500/60 text-white/80'}`}
             >
               昇級確定
             </button>
@@ -395,8 +395,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
           {showPromoteKyu && (
             <button
               onClick={() => handlePromote(2)}
-              disabled={!isScoreReady}
-              className={`py-4 rounded-2xl font-black uppercase text-[10px] ${isScoreReady ? 'bg-orange-600 text-white' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}
+              className={`py-4 rounded-2xl font-black uppercase text-[10px] ${isScoreReady ? 'bg-orange-600 text-white' : 'bg-orange-600/60 text-white/80'}`}
             >
               1級飛び級
             </button>
@@ -404,8 +403,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
           {showPromoteDan && !showPromoteKyu && (
             <button
               onClick={() => handlePromote(1)}
-              disabled={!isScoreReady}
-              className={`py-4 rounded-2xl font-black uppercase text-[10px] col-span-2 ${isScoreReady ? 'bg-purple-700 text-white' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}
+              className={`py-4 rounded-2xl font-black uppercase text-[10px] col-span-2 ${isScoreReady ? 'bg-purple-700 text-white' : 'bg-purple-700/60 text-white/80'}`}
             >
               昇段確定
             </button>
