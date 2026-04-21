@@ -81,10 +81,12 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
     loadData();
   }, [profile.id, currentKyu]);
 
-  const totalScore = useMemo(() => currentCriteria.reduce((acc, c) => acc + gradeToScore(c.grade), 0), [currentCriteria]);
-  const maxScore = currentCriteria.length * 10;
+  const rawScore = useMemo(() => currentCriteria.reduce((acc, c) => acc + gradeToScore(c.grade), 0), [currentCriteria]);
+  const rawMax = currentCriteria.length * 10;
+  const totalScore = rawMax > 0 ? Math.round((rawScore / rawMax) * 100) : 0;
+  const maxScore = currentCriteria.length > 0 ? 100 : 0;
   const isEligible = maxScore > 0 && totalScore >= 80;
-  const progressPct = maxScore > 0 ? Math.min((totalScore / maxScore) * 100, 100) : 0;
+  const progressPct = maxScore > 0 ? Math.min(totalScore, 100) : 0;
 
   const groupedCriteria = useMemo(() => {
     const groups: Record<string, any[]> = {};

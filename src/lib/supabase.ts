@@ -105,13 +105,14 @@ export const resolveRole = (profile: Profile): Role => {
   return profile.is_admin ? 'master' : 'student'
 }
 
-/** '正10級' / '10' などを '10級' に正規化（準・段はそのまま） */
+/** '正10級' / '10' / '準4' などを '10級' / '準4級' に正規化（段はそのまま） */
 export const normalizeKyu = (k: string | null | undefined): string => {
   if (k === null || k === undefined || k === '') return '無級'
   let s = String(k).trim()
   if (!s) return '無級'
   if (s.startsWith('正')) s = s.slice(1)
   if (/^\d+$/.test(s)) s = s + '級'
+  else if (/^準\d+$/.test(s)) s = s + '級'
   return s
 }
 

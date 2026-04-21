@@ -5,14 +5,49 @@ export default function LoginPage({ admin }: { admin?: boolean }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [resetting, setResetting] = useState(false)
+
+  const humanizeError = (msg: string): string => {
+    const m = msg.toLowerCase();
+    if (m.includes('invalid') || m.includes('credentials')) {
+      return 'メールアドレスまたはパスワードが正しくありません。';
+    }
+    if (m.includes('not confirmed') || m.includes('confirm')) {
+      return 'メールアドレスの確認が完了していません。確認メールをご確認ください。';
+    }
+    if (m.includes('rate') || m.includes('too many')) {
+      return '試行回数が多すぎます。しばらく時間をおいて再度お試しください。';
+    }
+    if (m.includes('network')) {
+      return 'ネットワークに接続できません。通信環境をご確認ください。';
+    }
+    return `ログインに失敗しました（${msg}）。解決しない場合は管理者にお問い合わせください。`;
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setErrorMsg(null)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) alert('ログインに失敗しました: ' + error.message)
+    if (error) setErrorMsg(humanizeError(error.message));
     setLoading(false)
   }
+
+  const handleResetRequest = async () => {
+    if (!email) {
+      setErrorMsg('リセットメールを送るには、まずメールアドレスを入力してください。');
+      return;
+    }
+    setResetting(true);
+    setErrorMsg(null);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/`,
+    });
+    setResetting(false);
+    if (error) setErrorMsg('リセットメール送信に失敗しました: ' + error.message);
+    else alert('パスワードリセット用のメールを送信しました。受信箱をご確認ください。');
+  };
 
   return (
     // 画面全体を白背景に、文字をネイビーに設定
@@ -58,12 +93,27 @@ export default function LoginPage({ admin }: { admin?: boolean }) {
             </div>
           </div>
 
+          {errorMsg && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 font-bold leading-relaxed">
+              {errorMsg}
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 px-4 border border-transparent rounded-lg shadow-sm text-lg font-bold text-white bg-[#ff6600] hover:bg-[#e65c00] focus:outline-none transition-colors"
+            className="w-full py-4 px-4 border border-transparent rounded-lg shadow-sm text-lg font-bold text-white bg-[#ff6600] hover:bg-[#e65c00] focus:outline-none transition-colors disabled:opacity-50"
           >
             {loading ? '認証中...' : 'ログイン'}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleResetRequest}
+            disabled={resetting}
+            className="w-full text-xs text-[#001f3f] hover:text-[#ff6600] font-bold underline decoration-dotted underline-offset-4 disabled:opacity-50"
+          >
+            {resetting ? '送信中...' : 'パスワードを忘れた場合'}
           </button>
         </form>
 

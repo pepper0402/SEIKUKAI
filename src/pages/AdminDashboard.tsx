@@ -61,11 +61,22 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
         const text = event.target.result;
         const rows = text.split('\n').slice(1).filter((r: string) => r.trim());
         if (type === 'students') {
+          // CSV形式: name, kyu, branch, birthday, login_email
+          let ok = 0, skipped = 0;
           for (const row of rows) {
-            const [name, kyu, branch, birthday] = row.split(',');
-            await supabase.from('profiles').insert({ name: name?.trim(), kyu: kyu?.trim(), branch: branch?.trim(), birthday: birthday?.trim() || null, is_admin: false });
+            const [name, kyu, branch, birthday, login_email] = row.split(',').map((s: string) => s?.trim() || '');
+            if (!name || !login_email) { skipped++; continue; }
+            const { error } = await supabase.from('profiles').upsert({
+              name,
+              kyu: kyu || null,
+              branch: branch || null,
+              birthday: birthday || null,
+              login_email,
+              is_admin: false,
+            }, { onConflict: 'login_email' });
+            if (error) skipped++; else ok++;
           }
-          alert('インポート完了');
+          alert(`インポート完了: ${ok}件更新/追加 / スキップ${skipped}件`);
           loadStudents();
         } else {
           // Drill_Master.csv: drill_no, belt_ja, grade_ja, category, item_ja, item_en, is_required, video_url, notes
@@ -86,13 +97,13 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
             alert('有効なデータが見つかりません。\nCSVの形式・文字コードを確認してください。');
             return;
           }
-          const { error } = await supabase.from('criteria').insert(batch);
+          const { error } = await supabase.from('criteria').upsert(batch, { onConflict: 'dan,examination_content' });
           if (error) {
             alert('インポートエラー:\n' + error.message);
             return;
           }
           setCriteriaVersion((v: number) => v + 1);
-          alert(`審査基準 ${batch.length}件 インポート完了`);
+          alert(`審査基準 ${batch.length}件 インポート/更新完了`);
           loadStudents();
         }
       };
@@ -404,11 +415,13 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
     fetchCurrentGrade()
   }, [student.id, currentKyu, criteriaRefreshKey])
 
-  const currentGradeScore = useMemo(() =>
+  const rawCurrentScore = useMemo(() =>
     currentGradeEvals.reduce((acc: number, c: any) => acc + (c.grade === 'A' ? 10 : c.grade === 'B' ? 6 : c.grade === 'C' ? 3 : 0), 0),
     [currentGradeEvals]
   );
-  const currentGradeMax = currentGradeEvals.length * 10;
+  const rawCurrentMax = currentGradeEvals.length * 10;
+  const currentGradeScore = rawCurrentMax > 0 ? Math.round((rawCurrentScore / rawCurrentMax) * 100) : 0;
+  const currentGradeMax = currentGradeEvals.length > 0 ? 100 : 0;
   const isEligible = currentGradeEvals.length > 0 && currentGradeScore >= 80;
 
   const groupedCriteria: [string, any[]][] = useMemo(() => {
@@ -430,8 +443,36 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
     const nextIdx = currentIdx + step;
     const nextKyu = allKyuList[nextIdx];
     if (!nextKyu || !window.confirm(`${nextKyu}へ昇級を確定しますか？`)) return;
-    const { error } = await supabase.from('profiles').update({ kyu: nextKyu }).eq('id', student.id);
-    if (!error) { setStudent({ ...student, kyu: nextKyu }); onRefresh(); }
+
+    const { error: profileErr } = await supabase.from('profiles').update({ kyu: nextKyu }).eq('id', student.id);
+    if (profileErr) {
+      alert('昇級処理に失敗しました: ' + profileErr.message);
+      return;
+    }
+
+    // 昇級履歴を記録
+    const { data: adminSelf } = await supabase.from('profiles').select('id').eq('login_email', adminProfile.login_email).maybeSingle();
+    await supabase.from('promotion_history').insert({
+      student_id: student.id,
+      from_kyu: currentKyu,
+      to_kyu: nextKyu,
+      promoted_by: adminSelf?.id ?? null,
+      score: currentGradeScore,
+    });
+
+    // 通知キューに追加（メール送信は Edge Function が処理）
+    if (student.login_email) {
+      await supabase.from('notifications').insert({
+        recipient_email: student.login_email,
+        subject: `【誠空会】昇級おめでとうございます - ${nextKyu}`,
+        body: `${student.name} 様\n\nこのたび${currentKyu}から${nextKyu}への昇級が確定いたしました。\n日頃の稽古の成果です。今後のさらなる精進をお祈りいたします。\n\n誠空会`,
+        type: 'promotion',
+      });
+    }
+
+    setStudent({ ...student, kyu: nextKyu });
+    onRefresh();
+    alert(`${nextKyu}への昇級を確定しました。`);
   };
 
   const handleEditSave = (updated: any) => {
