@@ -5,29 +5,7 @@ import StudentDashboard from './StudentDashboard'
 // --- ユーティリティ ---
 const allKyuList = KYU_OPTIONS.filter(k => k !== '')
 
-const calculateAge = (birthdayStr: any) => {
-  if (!birthdayStr) return 0;
-  const birthDate = new Date(birthdayStr);
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const m = today.getMonth() - birthDate.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-  return age;
-};
 
-const getBeltColorClass = (beltName: string) => {
-  switch (beltName) {
-    case '白帯': return 'bg-white text-gray-500 border-gray-200';
-    case '黄帯': return 'bg-yellow-400 text-yellow-900 border-yellow-500';
-    case '青帯': return 'bg-blue-600 text-white border-blue-700';
-    case '橙帯': return 'bg-orange-500 text-white border-orange-600';
-    case '紫帯': return 'bg-purple-600 text-white border-purple-700';
-    case '緑帯': return 'bg-green-600 text-white border-green-700';
-    case '茶帯': return 'bg-[#5D4037] text-white border-[#3E2723]';
-    case '黒帯': return 'bg-black text-white border-gray-800';
-    default: return 'bg-white text-gray-400 border-gray-100';
-  }
-};
 
 export default function AdminDashboard({ profile: adminProfile, onReload }: { profile: Profile; onReload?: () => void }) {
   const [students, setStudents] = useState<Profile[]>([])
@@ -64,9 +42,18 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
             await supabase.from('profiles').insert({ name: name?.trim(), kyu: kyu?.trim(), branch: branch?.trim(), birthday: birthday?.trim() || null, is_admin: false });
           }
         } else {
+          // Drill_Master.csv format: drill_no, belt_ja, grade_ja, category, item_ja, item_en, is_required, video_url, notes
           for (const row of rows) {
-            const [dan, type, content, video] = row.split(',');
-            await supabase.from('criteria').insert({ dan: dan?.trim(), examination_type: type?.trim(), examination_content: content?.trim(), video_url: video?.trim() || null });
+            const cols = row.split(',');
+            if (cols.length < 5) continue;
+            const gradeRaw = cols[2]?.trim() || '';
+            const dan = gradeRaw.startsWith('正') ? gradeRaw.slice(1) : gradeRaw; // 正10級 → 10級
+            const examination_type = cols[3]?.trim() || '';
+            const examination_content = cols[4]?.trim() || '';
+            const is_required = cols[6]?.trim()?.toUpperCase() === 'TRUE';
+            const video_url = cols[7]?.trim() || null;
+            if (!dan || !examination_content) continue;
+            await supabase.from('criteria').insert({ dan, examination_type, examination_content, is_required, video_url });
           }
         }
         alert('インポート完了');
@@ -107,10 +94,17 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
             <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase">Logout</button>
           </div>
 
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-2">
             <button onClick={() => handleCsvImport('students')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">生徒CSV読込</button>
             <button onClick={() => handleCsvImport('criteria')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">審査CSV読込</button>
           </div>
+          <button onClick={async () => {
+            if (!window.confirm('審査基準データを全削除してよろしいですか？\n（再インポート前にご利用ください）')) return;
+            await supabase.from('criteria').delete().neq('id', 0);
+            alert('削除完了。CSVを再インポートしてください。');
+          }} className="w-full py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-[9px] font-black text-red-300 border border-red-500/20 mb-4">
+            審査基準 全削除（再インポート用）
+          </button>
 
           <div className="space-y-2">
             <input type="text" placeholder="名前・級で検索..." className="w-full bg-white/10 border-none rounded-xl px-4 py-2 text-xs text-white outline-none focus:bg-white focus:text-[#001f3f]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
@@ -299,35 +293,20 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const [loading, setLoading] = useState(true)
   const [student, setStudent] = useState(initialStudent);
 
-  const age = calculateAge(student.birthday);
-  const isGeneral = age >= 15;
   const currentKyu = student.kyu || '無級';
 
-  const currentBelt = useMemo(() => {
-    const k = currentKyu;
-    if (k === '無級' || k === '準10級') return '白帯';
-    if (k.includes('10級') || k.includes('9級')) return '黄帯';
-    if (k.includes('8級') || k.includes('7級')) return '青帯';
-    if (k.includes('6級') || k.includes('5級')) return isGeneral ? '紫帯' : '橙帯';
-    if (k.includes('4級') || k.includes('3級')) return '緑帯';
-    if (k.includes('2級') || k.includes('1級')) return '茶帯';
-    if (k.includes('段')) return '黒帯';
-    return '白帯';
-  }, [currentKyu, isGeneral]);
-
-  const dbBeltName = (currentBelt === '橙帯' || currentBelt === '紫帯') ? '橙帯/紫帯' : currentBelt;
-  const [viewBelt, setViewBelt] = useState(dbBeltName);
+  const [viewGrade, setViewGrade] = useState(currentKyu);
 
   useEffect(() => {
     async function fetchEvals() {
       setLoading(true);
-      const { data: crit } = await supabase.from('criteria').select('*').eq('dan', viewBelt).order('id')
+      const { data: crit } = await supabase.from('criteria').select('*').eq('dan', viewGrade).order('id')
       const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
       setCriteria((crit || []).map(c => ({ ...c, grade: evals?.find(e => e.criterion_id === c.id)?.grade || 'D' })));
       setLoading(false);
     }
     fetchEvals()
-  }, [student.id, viewBelt])
+  }, [student.id, viewGrade])
 
   // A=10, B=6, C=3, D=0
   const totalScore = useMemo(() =>
@@ -352,9 +331,6 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
     setShowEdit(false);
   };
 
-  const belts = isGeneral
-    ? ['白帯', '黄帯', '青帯', '紫帯', '緑帯', '茶帯', '黒帯']
-    : ['白帯', '黄帯', '青帯', '橙帯', '緑帯', '茶帯', '黒帯'];
 
   const isDanGrade = currentKyu.includes('段');
   const showPromoteKyu = canCertifyKyu(adminRole) && !isDanGrade;
@@ -423,9 +399,21 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
         )}
       </div>
 
-      <div className="flex gap-2 overflow-x-auto no-scrollbar mb-6">
-        {belts.map(b => (
-          <button key={b} onClick={() => setViewBelt((b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b)} className={`px-4 py-2.5 rounded-xl text-[10px] font-black whitespace-nowrap border transition-all ${viewBelt === ((b === '橙帯' || b === '紫帯') ? '橙帯/紫帯' : b) ? `${getBeltColorClass(b)} shadow-lg scale-105 border-transparent` : `bg-white text-gray-400 border-gray-100 hover:border-gray-300`}`}>{b}</button>
+      <div className="flex gap-2 overflow-x-auto no-scrollbar mb-6 pb-1">
+        {allKyuList.map(g => (
+          <button
+            key={g}
+            onClick={() => setViewGrade(g)}
+            className={`px-4 py-2.5 rounded-xl text-[10px] font-black whitespace-nowrap border transition-all ${
+              viewGrade === g
+                ? g === currentKyu
+                  ? 'bg-[#001f3f] text-white shadow-lg border-transparent scale-105'
+                  : 'bg-gray-700 text-white shadow border-transparent scale-105'
+                : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'
+            }`}
+          >
+            {g === currentKyu ? `▶ ${g}` : g}
+          </button>
         ))}
       </div>
 

@@ -61,10 +61,10 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
   useEffect(() => {
     async function loadData() {
       setLoading(true)
-      const targetBelt = (theme.name === '橙帯' || theme.name === '紫帯') ? '橙帯/紫帯' : theme.name;
+      const targetGrade = profile.kyu || '無級';
 
       // 現在の基準
-      const { data: criteriaData } = await supabase.from('criteria').select('*').eq('dan', targetBelt).order('id');
+      const { data: criteriaData } = await supabase.from('criteria').select('*').eq('dan', targetGrade).order('id');
       // 全評価（履歴用含む）
       const { data: scoresData } = await supabase.from('evaluations').select('*, criteria(*)').eq('student_id', profile.id);
 
