@@ -38,6 +38,10 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
   const [sortBy, setSortBy] = useState<'name' | 'kyu'>('name')
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [criteriaVersion, setCriteriaVersion] = useState(0)
+  const [showAddStudent, setShowAddStudent] = useState(false)
+
+  const adminRole = resolveRole(adminProfile)
+  const canDeleteAll = adminRole === 'master'
 
   const loadStudents = useCallback(async () => {
     const { data } = await supabase.from('profiles').select('*').eq('is_admin', false)
@@ -146,13 +150,33 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
             <button onClick={() => handleCsvImport('students')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">生徒CSV読込</button>
             <button onClick={() => handleCsvImport('criteria')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">審査CSV読込</button>
           </div>
-          <button onClick={async () => {
-            if (!window.confirm('審査基準データを全削除してよろしいですか？\n（再インポート前にご利用ください）')) return;
-            await supabase.from('criteria').delete().neq('id', 0);
-            alert('削除完了。CSVを再インポートしてください。');
-          }} className="w-full py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-[9px] font-black text-red-300 border border-red-500/20 mb-4">
-            審査基準 全削除（再インポート用）
+          <button onClick={() => setShowAddStudent(true)}
+            className="w-full py-2 bg-orange-500 hover:bg-orange-600 rounded-lg text-[10px] font-black border border-orange-400 mb-2">
+            ＋ 生徒を個別に追加
           </button>
+          {canDeleteAll && (
+            <div className="flex gap-2 mb-4">
+              <button onClick={async () => {
+                const first = window.prompt('生徒データを全削除します。確認のため「削除」と入力してください。');
+                if (first !== '削除') return;
+                if (!window.confirm('本当に全ての生徒・評価・昇級履歴を削除しますか？この操作は取り消せません。')) return;
+                const { error } = await supabase.from('profiles').delete().eq('is_admin', false);
+                if (error) { alert('削除失敗: ' + error.message); return; }
+                setSelectedStudentId(null);
+                loadStudents();
+                alert('生徒データを全削除しました。');
+              }} className="flex-1 py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-[9px] font-black text-red-300 border border-red-500/20">
+                生徒 全削除
+              </button>
+              <button onClick={async () => {
+                if (!window.confirm('審査基準データを全削除してよろしいですか？\n（再インポート前にご利用ください）')) return;
+                await supabase.from('criteria').delete().neq('id', 0);
+                alert('削除完了。CSVを再インポートしてください。');
+              }} className="flex-1 py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-[9px] font-black text-red-300 border border-red-500/20">
+                審査基準 全削除
+              </button>
+            </div>
+          )}
 
           <div className="space-y-2">
             <input type="text" placeholder="名前・級で検索..." className="w-full bg-white/10 border-none rounded-xl px-4 py-2 text-xs text-white outline-none focus:bg-white focus:text-[#001f3f]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
@@ -192,6 +216,18 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
           </div>
         )}
       </div>
+
+      {showAddStudent && (
+        <AddStudentModal
+          branches={allBranchList}
+          onClose={() => setShowAddStudent(false)}
+          onAdded={(newStudent) => {
+            setShowAddStudent(false);
+            loadStudents();
+            setSelectedStudentId(newStudent.id);
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -202,6 +238,121 @@ const toDateInput = (v: string | null | undefined): string => {
   const s = String(v);
   return s.length >= 10 ? s.slice(0, 10) : s;
 };
+
+// --- 生徒追加モーダル ---
+function AddStudentModal({ branches, onClose, onAdded }: { branches: string[]; onClose: () => void; onAdded: (s: any) => void }) {
+  const [form, setForm] = useState({
+    name: '',
+    login_email: '',
+    kyu: '無級',
+    branch: branches[0] || '',
+    birthday: '',
+    joined_at: '',
+    gakuinen: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!form.name.trim() || !form.login_email.trim()) {
+      alert('名前とメールアドレスは必須です。');
+      return;
+    }
+    setSaving(true);
+    const { data, error } = await supabase.from('profiles').insert({
+      name: form.name.trim(),
+      login_email: form.login_email.trim().toLowerCase(),
+      kyu: form.kyu,
+      branch: form.branch || null,
+      birthday: form.birthday || null,
+      joined_at: form.joined_at || null,
+      gakuinen: form.gakuinen || null,
+      is_admin: false,
+    }).select().single();
+    setSaving(false);
+    if (error) {
+      alert('追加に失敗しました: ' + error.message);
+      return;
+    }
+    onAdded(data);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-[40px] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-black text-[#001f3f]">生徒を追加</h3>
+          <button onClick={onClose} className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 font-black hover:bg-gray-200">✕</button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">名前 <span className="text-red-500">*</span></label>
+            <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+          </div>
+
+          <div>
+            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">ログイン用メール <span className="text-red-500">*</span></label>
+            <input type="email" value={form.login_email} onChange={e => setForm({ ...form, login_email: e.target.value })}
+              placeholder="example@seikukai.jp"
+              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">初期級</label>
+              <select value={form.kyu} onChange={e => setForm({ ...form, kyu: e.target.value })}
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]">
+                {KYU_OPTIONS.filter(k => k !== '').map(k => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">支部</label>
+              <input type="text" value={form.branch} onChange={e => setForm({ ...form, branch: e.target.value })}
+                list="add-branch-list"
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+              <datalist id="add-branch-list">
+                {branches.map(b => <option key={b} value={b} />)}
+              </datalist>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">生年月日</label>
+              <input type="date" value={form.birthday} onChange={e => setForm({ ...form, birthday: e.target.value })}
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+            </div>
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">入会日</label>
+              <input type="date" value={form.joined_at} onChange={e => setForm({ ...form, joined_at: e.target.value })}
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">学年</label>
+            <select value={form.gakuinen} onChange={e => setForm({ ...form, gakuinen: e.target.value })}
+              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]">
+              {GAKUINEN_OPTIONS.map(g => <option key={g} value={g}>{g || '未設定'}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mt-6 text-[10px] text-blue-700 font-bold leading-relaxed">
+          💡 追加後、この生徒にメールで「パスワードリセット」を送ると、初回ログイン用のパスワード設定ができます。
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <button onClick={onClose} className="flex-1 py-3 bg-gray-100 rounded-2xl text-sm font-black text-gray-500 hover:bg-gray-200">キャンセル</button>
+          <button onClick={handleSubmit} disabled={saving} className="flex-1 py-3 bg-[#001f3f] text-white rounded-2xl text-sm font-black disabled:opacity-50">
+            {saving ? '追加中...' : '追加する'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // --- 編集パネル ---
 function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; adminProfile: Profile; onClose: () => void; onSave: (updated: any) => void }) {
