@@ -200,6 +200,24 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
           )}
         </div>
 
+        {/* ===== 試合情報リンク ===== */}
+        <a href="https://fight-port.vercel.app/" target="_blank" rel="noreferrer"
+          className="block mb-4 rounded-[22px] p-4 shadow-md overflow-hidden relative transition-transform active:scale-[0.98]"
+          style={{ backgroundColor: bc.bg, color: bc.text }}>
+          <div className="absolute top-0 right-0 text-[5rem] font-black italic opacity-[0.08] -mr-2 -mt-3 pointer-events-none select-none leading-none">
+            VS
+          </div>
+          <div className="relative z-10 flex items-center justify-between">
+            <div>
+              <p className="text-[8px] font-black uppercase tracking-[0.25em] opacity-50 mb-1">Fight Info</p>
+              <p className="text-[15px] font-black leading-none mb-1">試合情報</p>
+              <p className="text-[9px] font-bold opacity-60">FightPort で大会・対戦表を確認</p>
+            </div>
+            <div className="w-9 h-9 rounded-full flex items-center justify-center text-[14px] font-black"
+              style={{ backgroundColor: 'rgba(0,0,0,0.18)' }}>→</div>
+          </div>
+        </a>
+
         {/* ===== 現在の審査リスト（アコーディオン） ===== */}
         {viewMode === 'current' && (
           currentCriteria.length === 0 ? (
