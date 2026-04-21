@@ -42,24 +42,36 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
             const [name, kyu, branch, birthday] = row.split(',');
             await supabase.from('profiles').insert({ name: name?.trim(), kyu: kyu?.trim(), branch: branch?.trim(), birthday: birthday?.trim() || null, is_admin: false });
           }
+          alert('インポート完了');
+          loadStudents();
         } else {
-          // Drill_Master.csv format: drill_no, belt_ja, grade_ja, category, item_ja, item_en, is_required, video_url, notes
+          // Drill_Master.csv: drill_no, belt_ja, grade_ja, category, item_ja, item_en, is_required, video_url, notes
+          const batch: any[] = [];
           for (const row of rows) {
             const cols = row.split(',');
             if (cols.length < 5) continue;
             const gradeRaw = cols[2]?.trim() || '';
-            const dan = gradeRaw.startsWith('正') ? gradeRaw.slice(1) : gradeRaw; // 正10級 → 10級
+            const dan = gradeRaw.startsWith('正') ? gradeRaw.slice(1) : gradeRaw;
             const examination_type = cols[3]?.trim() || '';
             const examination_content = cols[4]?.trim() || '';
             const is_required = cols[6]?.trim()?.toUpperCase() === 'TRUE';
             const video_url = cols[7]?.trim() || null;
             if (!dan || !examination_content) continue;
-            await supabase.from('criteria').insert({ dan, examination_type, examination_content, is_required, video_url });
+            batch.push({ dan, examination_type, examination_content, is_required, video_url });
           }
+          if (batch.length === 0) {
+            alert('有効なデータが見つかりません。\nCSVの形式・文字コードを確認してください。');
+            return;
+          }
+          const { error } = await supabase.from('criteria').insert(batch);
+          if (error) {
+            alert('インポートエラー:\n' + error.message);
+            return;
+          }
+          setCriteriaVersion((v: number) => v + 1);
+          alert(`審査基準 ${batch.length}件 インポート完了`);
+          loadStudents();
         }
-        if (type === 'criteria') setCriteriaVersion((v: number) => v + 1);
-        alert('インポート完了');
-        loadStudents();
       };
       reader.readAsText(file);
     };
