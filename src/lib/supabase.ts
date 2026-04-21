@@ -18,7 +18,6 @@ export type Profile = {
   birthday: string | null
   joined_at: string | null
   gakuinen: string
-  gohi: string
   is_admin: boolean
   role: Role
   branch: string

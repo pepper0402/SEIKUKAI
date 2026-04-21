@@ -202,7 +202,6 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
     birthday: toDateInput(student.birthday),
     joined_at: toDateInput(student.joined_at),
     gakuinen: (student.gakuinen || '').trim(),
-    gohi: student.gohi || '',
   });
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -235,7 +234,6 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
       birthday: form.birthday || null,
       joined_at: form.joined_at || null,
       gakuinen: form.gakuinen,
-      gohi: form.gohi,
     }).eq('id', student.id);
     setSaving(false);
     if (!error) onSave({ ...student, ...form });
@@ -317,15 +315,6 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
             </select>
           </div>
 
-          <div>
-            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">護費</label>
-            <input
-              type="text"
-              value={form.gohi}
-              onChange={e => setForm({ ...form, gohi: e.target.value })}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]"
-            />
-          </div>
         </div>
 
         {/* パスワードリセット（管理者操作） */}
