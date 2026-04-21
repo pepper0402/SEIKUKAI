@@ -65,12 +65,13 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
   useEffect(() => {
     async function loadData() {
       setLoading(true)
-      const gradeVariants = [currentKyu, '正' + currentKyu];
-      const [{ data: criteriaData }, { data: scoresData }] = await Promise.all([
-        supabase.from('criteria').select('*').in('dan', gradeVariants).order('id'),
+      const [{ data: allCriteria }, { data: scoresData }] = await Promise.all([
+        supabase.from('criteria').select('*').order('id'),
         supabase.from('evaluations').select('*, criteria(*)').eq('student_id', profile.id),
       ]);
-      setCurrentCriteria((criteriaData || []).map(c => ({
+      const filtered = (allCriteria || []).filter((c: any) => normalizeKyu(c.dan) === currentKyu);
+      console.log('[StudentDashboard] currentKyu=', currentKyu, 'total criteria=', allCriteria?.length, 'matched=', filtered.length, 'sample dan values=', [...new Set((allCriteria || []).map((c: any) => c.dan))]);
+      setCurrentCriteria(filtered.map((c: any) => ({
         ...c,
         grade: scoresData?.find((s: any) => s.criterion_id === c.id)?.grade || null
       })));

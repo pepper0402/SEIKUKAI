@@ -356,9 +356,11 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   useEffect(() => {
     async function fetchEvals() {
       setLoading(true);
-      const { data: crit } = await supabase.from('criteria').select('*').in('dan', [viewGrade, '正' + viewGrade]).order('id')
+      const { data: crit } = await supabase.from('criteria').select('*').order('id')
       const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
-      setCriteria((crit || []).map(c => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || 'D' })));
+      const filtered = (crit || []).filter((c: any) => normalizeKyu(c.dan) === viewGrade);
+      console.log('[AdminDashboard/view] viewGrade=', viewGrade, 'total=', crit?.length, 'matched=', filtered.length);
+      setCriteria(filtered.map((c: any) => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || 'D' })));
       setLoading(false);
     }
     fetchEvals()
@@ -367,9 +369,10 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   // 現在の級スコア（昇級判定専用）― viewGradeに関わらず常にcurrentKyuで計算
   useEffect(() => {
     async function fetchCurrentGrade() {
-      const { data: crit } = await supabase.from('criteria').select('*').in('dan', [currentKyu, '正' + currentKyu]).order('id')
+      const { data: crit } = await supabase.from('criteria').select('*').order('id')
       const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
-      setCurrentGradeEvals((crit || []).map((c: any) => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || 'D' })));
+      const filtered = (crit || []).filter((c: any) => normalizeKyu(c.dan) === currentKyu);
+      setCurrentGradeEvals(filtered.map((c: any) => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || 'D' })));
     }
     fetchCurrentGrade()
   }, [student.id, currentKyu, criteriaRefreshKey])
