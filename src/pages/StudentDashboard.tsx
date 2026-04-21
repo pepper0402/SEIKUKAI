@@ -42,9 +42,9 @@ const getBeltTheme = (kyu: string, isGeneral: boolean) => {
 }
 
 const gradeToScore = (grade: string | null) => {
-  if (grade === 'A') return 2.5;
-  if (grade === 'B') return 1.5;
-  if (grade === 'C') return 0.5;
+  if (grade === 'A') return 10;
+  if (grade === 'B') return 6;
+  if (grade === 'C') return 3;
   return 0;
 };
 

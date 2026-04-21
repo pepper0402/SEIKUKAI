@@ -5,6 +5,8 @@ const key = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(url, key)
 
+export type Role = 'master' | 'branch' | 'instructor' | 'student'
+
 export type Profile = {
   id: string
   user_id: string
@@ -13,11 +15,13 @@ export type Profile = {
   dan: string
   kyu: string
   keiko_days: number
-  birth_date: string | null
-  join_date: string | null
+  birthday: string | null
+  joined_at: string | null
   gakuinen: string
   gohi: string
   is_admin: boolean
+  role: Role
+  branch: string
 }
 
 export type Criterion = {
@@ -26,13 +30,14 @@ export type Criterion = {
   examination_type: string
   examination_content: string
   video_url: string | null
+  is_required: boolean
 }
 
 export type Evaluation = {
   id: number
-  user_email: string
-  criteria_id: number
-  hyoka: string
+  student_id: string
+  criterion_id: number
+  grade: string
 }
 
 export type BeltConfig = {
@@ -43,13 +48,30 @@ export type BeltConfig = {
   manten: number
 }
 
-export const DAN_OPTIONS = ['', '白帯', '黄帯', '青帯', '緑帯', '橙帯', '茶帯', '黒帯']
-export const KYU_OPTIONS = ['', '無級', '準10級', '正10級', '準9級', '正9級', '準8級', '正8級',
-  '準7級', '正7級', '準6級', '正6級', '準5級', '正5級', '準4級', '正4級',
-  '準3級', '正3級', '準2級', '正2級', '準1級', '正1級', '初段', '弍段', '参段', '四段', '五段']
-export const GAKUINEN_OPTIONS = ['', '小学1年生', '小学2年生', '小学3年生', '小学4年生',
+export const KYU_OPTIONS = [
+  '', '無級',
+  '準10級', '10級',
+  '準9級',  '9級',
+  '準8級',  '8級',
+  '準7級',  '7級',
+  '準6級',  '6級',
+  '準5級',  '5級',
+  '準4級',  '4級',
+  '準3級',  '3級',
+  '準2級',  '2級',
+  '準1級',  '1級',
+  '初段', '弍段', '参段', '四段', '五段'
+]
+
+export const KYU_GRADES = KYU_OPTIONS.filter(k => k && !k.includes('段'))
+export const DAN_GRADES  = ['初段', '弍段', '参段', '四段', '五段']
+
+export const GAKUINEN_OPTIONS = [
+  '', '小学1年生', '小学2年生', '小学3年生', '小学4年生',
   '小学5年生', '小学6年生', '中学1年生', '中学2年生', '中学3年生',
-  '高校1年生', '高校2年生', '高校3年生', '社会人']
+  '高校1年生', '高校2年生', '高校3年生', '社会人'
+]
+
 export const DAN_COLORS: Record<string, { bg: string; text: string }> = {
   '白帯': { bg: '#f0f0f0', text: '#333' },
   '黄帯': { bg: '#FFD700', text: '#333' },
@@ -60,9 +82,29 @@ export const DAN_COLORS: Record<string, { bg: string; text: string }> = {
   '黒帯': { bg: '#1a1a1a', text: '#fff' },
 }
 
-export const calcScore = (evalMap: Record<number, string>) =>
-  Object.values(evalMap).reduce((acc, h) =>
-    acc + (h === '優' ? 2.5 : h === '良' ? 1.5 : h === '可' ? 0.5 : 0), 0)
+// A=10 / B=6 / C=3 / D=0  → 10項目満点100点、80点以上合格
+export const gradeToPoint = (g: string): number =>
+  g === 'A' ? 10 : g === 'B' ? 6 : g === 'C' ? 3 : 0
+
+export const PASS_SCORE = 80
+
+// 役割ごとの権限
+export const canCertifyDan = (role: Role) => role === 'master'
+export const canCertifyKyu = (role: Role) => role === 'master' || role === 'branch'
+export const canScore      = (role: Role) => role !== 'student'
+
+export const getRoleLabel = (role: Role) => {
+  if (role === 'master')     return 'マスター'
+  if (role === 'branch')     return '支部長'
+  if (role === 'instructor') return '指導員'
+  return '会員'
+}
+
+/** is_admin を fallback として使い、role カラムが未設定でも動作させる */
+export const resolveRole = (profile: Profile): Role => {
+  if (profile.role) return profile.role
+  return profile.is_admin ? 'master' : 'student'
+}
 
 export const calcAge = (birthDate: string | null) => {
   if (!birthDate) return '-'
