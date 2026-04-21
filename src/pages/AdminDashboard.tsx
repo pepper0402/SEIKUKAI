@@ -14,6 +14,7 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
   const [branchFilter, setBranchFilter] = useState('すべて')
   const [sortBy, setSortBy] = useState<'name' | 'kyu'>('name')
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+  const [criteriaVersion, setCriteriaVersion] = useState(0)
 
   const loadStudents = useCallback(async () => {
     const { data } = await supabase.from('profiles').select('*').eq('is_admin', false)
@@ -56,6 +57,7 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
             await supabase.from('criteria').insert({ dan, examination_type, examination_content, is_required, video_url });
           }
         }
+        if (type === 'criteria') setCriteriaVersion((v: number) => v + 1);
         alert('インポート完了');
         loadStudents();
       };
@@ -137,7 +139,7 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
 
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-10 pt-16 md:pt-10">
         {selectedStudent ? (
-          <EvaluationPanel key={selectedStudent.id} student={selectedStudent} onRefresh={loadStudents} allBranchList={allBranchList} adminProfile={adminProfile} />
+          <EvaluationPanel key={selectedStudent.id} student={selectedStudent} onRefresh={loadStudents} allBranchList={allBranchList} adminProfile={adminProfile} criteriaRefreshKey={criteriaVersion} />
         ) : (
           <div className="h-full flex flex-col items-center justify-center opacity-20 grayscale">
              <h2 className="font-black text-4xl italic tracking-tighter uppercase">SEIKUKAI</h2>
@@ -280,16 +282,18 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
 }
 
 // --- 評価パネル ---
-function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, adminProfile }: {
+function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, adminProfile, criteriaRefreshKey }: {
   student: any;
   onRefresh: () => void;
   allBranchList: string[];
   adminProfile: Profile;
+  criteriaRefreshKey: number;
 }) {
   const adminRole = resolveRole(adminProfile);
   const [showEdit, setShowEdit] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [criteria, setCriteria] = useState<any[]>([])
+  const [currentGradeEvals, setCurrentGradeEvals] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [student, setStudent] = useState(initialStudent);
 
@@ -297,26 +301,40 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
 
   const [viewGrade, setViewGrade] = useState(currentKyu);
 
+  // 閲覧中グレードの基準・評価を取得（表示・採点用）
   useEffect(() => {
     async function fetchEvals() {
       setLoading(true);
       const { data: crit } = await supabase.from('criteria').select('*').eq('dan', viewGrade).order('id')
       const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
-      setCriteria((crit || []).map(c => ({ ...c, grade: evals?.find(e => e.criterion_id === c.id)?.grade || 'D' })));
+      setCriteria((crit || []).map(c => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || 'D' })));
       setLoading(false);
     }
     fetchEvals()
-  }, [student.id, viewGrade])
+  }, [student.id, viewGrade, criteriaRefreshKey])
 
-  // A=10, B=6, C=3, D=0
-  const totalScore = useMemo(() =>
-    criteria.reduce((acc, c) => acc + (c.grade === 'A' ? 10 : c.grade === 'B' ? 6 : c.grade === 'C' ? 3 : 0), 0),
-    [criteria]
+  // 現在の級スコア（昇級判定専用）― viewGradeに関わらず常にcurrentKyuで計算
+  useEffect(() => {
+    async function fetchCurrentGrade() {
+      const { data: crit } = await supabase.from('criteria').select('*').eq('dan', currentKyu).order('id')
+      const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
+      setCurrentGradeEvals((crit || []).map((c: any) => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || 'D' })));
+    }
+    fetchCurrentGrade()
+  }, [student.id, currentKyu, criteriaRefreshKey])
+
+  const currentGradeScore = useMemo(() =>
+    currentGradeEvals.reduce((acc: number, c: any) => acc + (c.grade === 'A' ? 10 : c.grade === 'B' ? 6 : c.grade === 'C' ? 3 : 0), 0),
+    [currentGradeEvals]
   );
-  const maxScore = criteria.length * 10;
-  const isScoreReady = criteria.length > 0 && totalScore >= 80;
+  const currentGradeMax = currentGradeEvals.length * 10;
+  const isEligible = currentGradeEvals.length > 0 && currentGradeScore >= 80;
 
   const handlePromote = async (step: number = 1) => {
+    if (!isEligible) {
+      alert(`合格点（80点）に達していません。\n現在の点数：${currentGradeScore}点 / ${currentGradeMax}点`);
+      return;
+    }
     const currentIdx = allKyuList.indexOf(currentKyu);
     const nextIdx = currentIdx + step;
     const nextKyu = allKyuList[nextIdx];
@@ -354,8 +372,8 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
           </div>
           <div className="text-right">
             <p className="text-[10px] opacity-40 tracking-widest uppercase">Score</p>
-            <p className={`text-6xl md:text-7xl font-black ${isScoreReady ? 'text-green-400' : 'text-white'}`}>{totalScore}</p>
-            <p className="text-[9px] opacity-30">/ {maxScore || 100}</p>
+            <p className={`text-6xl md:text-7xl font-black ${isEligible ? 'text-green-400' : 'text-white'}`}>{currentGradeScore}</p>
+            <p className="text-[9px] opacity-30">/ {currentGradeMax || 100}</p>
           </div>
         </div>
 
@@ -363,7 +381,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
           {showPromoteKyu && (
             <button
               onClick={() => handlePromote(1)}
-              className={`py-4 rounded-2xl font-black uppercase text-[10px] ${isScoreReady ? 'bg-orange-500 text-white' : 'bg-orange-500/60 text-white/80'}`}
+              className={`py-4 rounded-2xl font-black uppercase text-[10px] ${isEligible ? 'bg-orange-500 text-white' : 'bg-orange-500/60 text-white/80'}`}
             >
               昇級確定
             </button>
@@ -371,7 +389,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
           {showPromoteKyu && (
             <button
               onClick={() => handlePromote(2)}
-              className={`py-4 rounded-2xl font-black uppercase text-[10px] ${isScoreReady ? 'bg-orange-600 text-white' : 'bg-orange-600/60 text-white/80'}`}
+              className={`py-4 rounded-2xl font-black uppercase text-[10px] ${isEligible ? 'bg-orange-600 text-white' : 'bg-orange-600/60 text-white/80'}`}
             >
               1級飛び級
             </button>
@@ -379,7 +397,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
           {showPromoteDan && !showPromoteKyu && (
             <button
               onClick={() => handlePromote(1)}
-              className={`py-4 rounded-2xl font-black uppercase text-[10px] col-span-2 ${isScoreReady ? 'bg-purple-700 text-white' : 'bg-purple-700/60 text-white/80'}`}
+              className={`py-4 rounded-2xl font-black uppercase text-[10px] col-span-2 ${isEligible ? 'bg-purple-700 text-white' : 'bg-purple-700/60 text-white/80'}`}
             >
               昇段確定
             </button>
@@ -435,7 +453,10 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
                 <div className="grid grid-cols-4 gap-2">
                   {['A', 'B', 'C', 'D'].map(g => (
                     <button key={g} onClick={() => {
-                      setCriteria(prev => prev.map(item => item.id === c.id ? { ...item, grade: g } : item));
+                      setCriteria(prev => prev.map((item: any) => item.id === c.id ? { ...item, grade: g } : item));
+                      if (viewGrade === currentKyu) {
+                        setCurrentGradeEvals((prev: any[]) => prev.map((item: any) => item.id === c.id ? { ...item, grade: g } : item));
+                      }
                       supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: g }, { onConflict: 'student_id,criterion_id' }).then();
                     }} className={`py-3 rounded-xl font-black transition-all ${c.grade === g ? 'bg-[#001f3f] text-white shadow-lg' : 'bg-gray-50 text-gray-300 hover:bg-gray-100'}`}>{g}</button>
                   ))}
