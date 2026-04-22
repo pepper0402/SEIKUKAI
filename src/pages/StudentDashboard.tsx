@@ -1,6 +1,140 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase, Profile, normalizeKyu } from '../lib/supabase'
 
+// --- アカウント設定モーダル（パスワード/メール変更） ---
+function AccountSettingsModal({ profile, onClose, onEmailChanged }: {
+  profile: Profile;
+  onClose: () => void;
+  onEmailChanged?: () => void;
+}) {
+  const [tab, setTab] = useState<'password' | 'email'>('password');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handlePasswordChange = async () => {
+    if (newPassword.length < 8) {
+      alert('パスワードは8文字以上で設定してください。');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert('確認用パスワードが一致しません。');
+      return;
+    }
+    setSubmitting(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setSubmitting(false);
+    if (error) {
+      alert('パスワード変更に失敗しました: ' + error.message);
+      return;
+    }
+    alert('パスワードを変更しました。次回ログインから新しいパスワードをお使いください。');
+    setNewPassword('');
+    setConfirmPassword('');
+    onClose();
+  };
+
+  const handleEmailChange = async () => {
+    const trimmed = newEmail.trim().toLowerCase();
+    if (!trimmed || !trimmed.includes('@')) {
+      alert('有効なメールアドレスを入力してください。');
+      return;
+    }
+    if (trimmed === (profile.login_email || '').toLowerCase()) {
+      alert('現在のメールアドレスと同じです。');
+      return;
+    }
+    if (!confirm(
+      `新しいメールアドレス「${trimmed}」に確認メールを送信します。\n\n` +
+      `届いたメールのリンクをクリックして変更を完了してください。\n` +
+      `※hacomonoのご登録メールもあわせて更新をお願いします（支部/本部まで）。`
+    )) return;
+    setSubmitting(true);
+    const { error } = await supabase.auth.updateUser({ email: trimmed });
+    setSubmitting(false);
+    if (error) {
+      alert('メール変更の送信に失敗しました: ' + error.message);
+      return;
+    }
+    alert(
+      `${trimmed} と 現在のアドレス の両方に確認メールを送信しました。\n` +
+      `両方のリンクをクリックすると変更が完了します。`
+    );
+    setNewEmail('');
+    onEmailChanged?.();
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-[32px] p-7 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-5">
+          <h3 className="text-lg font-black text-[#001f3f]">アカウント設定</h3>
+          <button onClick={onClose} className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 font-black">✕</button>
+        </div>
+
+        <div className="flex bg-gray-100 p-1 rounded-2xl mb-5">
+          {([
+            { k: 'password', label: 'パスワード変更' },
+            { k: 'email', label: 'メール変更' },
+          ] as const).map(({ k, label }) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`flex-1 py-2 rounded-xl text-[10px] font-black transition-all ${tab === k ? 'bg-white shadow-sm text-[#001f3f]' : 'text-gray-400'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'password' ? (
+          <div className="space-y-4">
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">新しいパスワード</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                placeholder="8文字以上"
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+            </div>
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">確認のためもう一度入力</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-[10px] text-blue-700 font-bold leading-relaxed">
+              💡 変更後は自動的に新しいパスワードでログイン状態が続きます。次回ログイン時から新パスワードをお使いください。
+            </div>
+            <button onClick={handlePasswordChange} disabled={submitting || !newPassword || !confirmPassword}
+              className="w-full py-3 bg-[#001f3f] text-white rounded-2xl text-sm font-black disabled:opacity-50">
+              {submitting ? '変更中...' : 'パスワードを変更する'}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">現在のメールアドレス</label>
+              <p className="text-sm font-bold text-gray-600 px-4 py-3 bg-gray-50 rounded-2xl">{profile.login_email || '未設定'}</p>
+            </div>
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">新しいメールアドレス</label>
+              <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
+                placeholder="example@example.com"
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+            </div>
+            <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-[10px] text-orange-700 font-bold leading-relaxed">
+              ⚠️ 新旧両方のメールアドレスに確認メールが届きます。<br />
+              両方のリンクをクリックして変更完了となります。<br />
+              <span className="opacity-80">※hacomono側のご登録メールも別途、支部/本部にご連絡ください。</span>
+            </div>
+            <button onClick={handleEmailChange} disabled={submitting || !newEmail}
+              className="w-full py-3 bg-[#001f3f] text-white rounded-2xl text-sm font-black disabled:opacity-50">
+              {submitting ? '送信中...' : '確認メールを送信する'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const calculateTrainingPeriod = (joinedDateStr: any) => {
   if (!joinedDateStr) return '未設定';
   const start = new Date(joinedDateStr);
@@ -49,12 +183,13 @@ const gradeToScore = (grade: string | null) => {
   return 0;
 };
 
-export default function StudentDashboard({ profile }: { profile: Profile }) {
+export default function StudentDashboard({ profile, onReload }: { profile: Profile; onReload?: () => void }) {
   const [currentCriteria, setCurrentCriteria] = useState<any[]>([])
   const [historyData, setHistoryData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'current' | 'history'>('current')
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+  const [showSettings, setShowSettings] = useState(false)
 
   const currentKyu = useMemo(() => normalizeKyu(profile.kyu), [profile.kyu]);
   const isGeneral = useMemo(() => calculateAge(profile.birthday) >= 15, [profile.birthday]);
@@ -134,11 +269,19 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
               ))}
             </div>
           </div>
-          <button onClick={() => supabase.auth.signOut()}
-            className="text-[9px] font-bold px-3 py-2 rounded-xl"
-            style={{ backgroundColor: 'rgba(0,0,0,0.12)', color: bc.text }}>
-            ログアウト
-          </button>
+          <div className="flex flex-col gap-1.5">
+            <button onClick={() => setShowSettings(true)}
+              className="text-[9px] font-bold px-3 py-2 rounded-xl flex items-center gap-1 justify-center"
+              style={{ backgroundColor: 'rgba(0,0,0,0.12)', color: bc.text }}
+              title="パスワード・メール変更">
+              ⚙ 設定
+            </button>
+            <button onClick={() => supabase.auth.signOut()}
+              className="text-[9px] font-bold px-3 py-2 rounded-xl"
+              style={{ backgroundColor: 'rgba(0,0,0,0.12)', color: bc.text }}>
+              ログアウト
+            </button>
+          </div>
         </div>
       </div>
 
@@ -313,6 +456,14 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
           )
         )}
       </div>
+
+      {showSettings && (
+        <AccountSettingsModal
+          profile={profile}
+          onClose={() => setShowSettings(false)}
+          onEmailChanged={onReload}
+        />
+      )}
     </div>
   );
 }
