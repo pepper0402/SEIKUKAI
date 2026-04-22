@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { supabase, Profile, normalizeKyu, isValidVideoUrl, BELT_COLORS, getBeltForProfile } from '../lib/supabase'
+import { supabase, Profile, normalizeKyu, isValidVideoUrl, BELT_COLORS, getBeltForProfile, needsIppanMigration } from '../lib/supabase'
 
 // --- アカウント設定モーダル（パスワード/メール変更） ---
 function AccountSettingsModal({ profile, onClose, onEmailChanged }: {
@@ -234,6 +234,13 @@ export default function StudentDashboard({ profile, onReload }: { profile: Profi
                   <p className="text-[12px] font-black leading-none">{value}</p>
                 </div>
               ))}
+              {needsIppanMigration(profile) && (
+                <div className="px-3 py-1.5 rounded-xl border"
+                  style={{ backgroundColor: '#fef3c7', borderColor: '#f59e0b', color: '#92400e' }}>
+                  <p className="text-[7px] font-black uppercase opacity-70 leading-none mb-0.5">Status</p>
+                  <p className="text-[12px] font-black leading-none">⚠ 一般未移行</p>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex flex-col gap-1.5">

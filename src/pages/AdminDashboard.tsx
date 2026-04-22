@@ -3,7 +3,7 @@ import {
   supabase, Profile, Role,
   resolveRole, canCertifyDan, canCertifyKyu, canScore, getRoleLabel,
   KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu, isValidVideoUrl,
-  BELT_COLORS, BELT_GRADE_MAP, getBeltCategoryForGrade, getBeltForProfile,
+  BELT_COLORS, BELT_GRADE_MAP, getBeltCategoryForGrade, getBeltForProfile, needsIppanMigration,
 } from '../lib/supabase'
 import StudentDashboard from './StudentDashboard'
 
@@ -244,14 +244,18 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
           {filteredStudents.map(s => {
             const sRole = resolveRole(s);
             const isStaff = sRole !== 'student';
+            const unmigrated = needsIppanMigration(s);
             return (
               <div key={s.id} onClick={() => {setSelectedStudentId(s.id); if(window.innerWidth<768)setIsSidebarOpen(false);}} className={`p-5 border-l-4 cursor-pointer transition-all ${selectedStudentId === s.id ? 'bg-orange-50 border-orange-500 shadow-inner' : 'border-transparent hover:bg-gray-50'}`}>
                 <div className="flex justify-between items-center">
                   <div>
-                    <div className="flex items-center gap-1.5 mb-0.5">
+                    <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                       <p className="font-black text-sm">{s.name}</p>
                       {isStaff && (
                         <span className="text-[7px] bg-[#001f3f] text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider">{getRoleLabel(sRole)}</span>
+                      )}
+                      {unmigrated && (
+                        <span className="text-[7px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-black" title="高校進学済・一般ランクへ未移行">⚠ 未移行</span>
                       )}
                     </div>
                     <p className="text-[9px] font-bold text-orange-500 uppercase">{normalizeKyu(s.kyu)}</p>
@@ -431,6 +435,7 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
     joined_at: toDateInput(student.joined_at),
     gakuinen: (student.gakuinen || '').trim(),
     role: (resolveRole(student) as Role),
+    keeps_junior_rank: !!student.keeps_junior_rank,
   });
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -468,6 +473,7 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
       birthday: form.birthday || null,
       joined_at: form.joined_at || null,
       gakuinen: form.gakuinen,
+      keeps_junior_rank: form.keeps_junior_rank,
     };
     // マスターのみ role / is_admin を更新可能（自分自身は除く）
     if (canAssignRole) {
@@ -557,6 +563,21 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
               {GAKUINEN_OPTIONS.map(g => <option key={g} value={g}>{g || '未設定'}</option>)}
             </select>
           </div>
+
+          {/* 一般未移行フラグ（高校進学済だが少年部ランク保持） */}
+          <label className="flex items-start gap-3 p-3 rounded-2xl bg-amber-50 border border-amber-200 cursor-pointer select-none">
+            <input type="checkbox"
+              checked={form.keeps_junior_rank}
+              onChange={e => setForm({ ...form, keeps_junior_rank: e.target.checked })}
+              className="mt-0.5 accent-amber-500 w-4 h-4" />
+            <div>
+              <p className="text-[11px] font-black text-amber-900 leading-tight">一般ランクへ未移行</p>
+              <p className="text-[9px] text-amber-700 font-bold mt-0.5 leading-snug">
+                高校進学済でも少年部ランク（少年緑帯・茶帯・黒帯）を保持する場合にチェック。<br />
+                一般審査合格時にOFFにすると、年齢ベースで一般ランクへ自動切替されます。
+              </p>
+            </div>
+          </label>
 
         </div>
 
@@ -773,7 +794,16 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
           <div className="flex justify-between items-start mb-4">
             <div>
               <p className="text-[8px] font-black uppercase tracking-[0.25em] opacity-40 mb-0.5">Student</p>
-              <h2 className="text-2xl font-black tracking-tight">{student.name}</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-2xl font-black tracking-tight">{student.name}</h2>
+                {needsIppanMigration(student) && (
+                  <span className="text-[9px] font-black px-2 py-1 rounded"
+                    style={{ backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}
+                    title="高校進学済・一般ランクへ未移行">
+                    ⚠ 一般未移行
+                  </span>
+                )}
+              </div>
             </div>
             <button onClick={() => setShowPreview(true)}
               className="text-[9px] font-black border rounded-full px-3 py-1.5 uppercase opacity-50"

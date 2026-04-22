@@ -21,6 +21,8 @@ export type Profile = {
   is_admin: boolean
   role: Role
   branch: string
+  /** 高校進学済だが一般ランクへ未移行の場合 TRUE。少年部ランクを保持し表示も少年部色＋「未移行」バッジ */
+  keeps_junior_rank?: boolean
 }
 
 export type Criterion = {
@@ -130,15 +132,31 @@ export const calculateAgeFromBirthday = (birthday: string | null | undefined): n
   return age
 }
 
-/** 15歳以上（高校生以上）を一般、それ未満を少年部とする。誕生日未設定は少年部扱い */
-export const isIppan = (profile: Pick<Profile, 'birthday'> | null | undefined): boolean => {
+/**
+ * 15歳以上（高校生以上）を一般、それ未満を少年部とする。
+ * ただし keeps_junior_rank=true の場合は年齢に関わらず少年部扱い（一般へ未移行）。
+ * 誕生日未設定は少年部扱い。
+ */
+export const isIppan = (profile: Pick<Profile, 'birthday' | 'keeps_junior_rank'> | null | undefined): boolean => {
   if (!profile) return false
+  if (profile.keeps_junior_rank === true) return false
   const age = calculateAgeFromBirthday(profile.birthday)
   return age !== null && age >= 15
 }
 
-/** プロファイル全体から age-aware な帯名を返す */
-export const getBeltForProfile = (profile: Pick<Profile, 'kyu' | 'birthday'> | null | undefined): string => {
+/**
+ * 「年齢上は一般だが、まだ少年部ランクを保持」＝一般審査へ未移行の状態かを判定。
+ * true のとき UI に「未移行」バッジを表示する。
+ */
+export const needsIppanMigration = (profile: Pick<Profile, 'birthday' | 'keeps_junior_rank'> | null | undefined): boolean => {
+  if (!profile) return false
+  if (profile.keeps_junior_rank !== true) return false
+  const age = calculateAgeFromBirthday(profile.birthday)
+  return age !== null && age >= 15
+}
+
+/** プロファイル全体から age-aware な帯名を返す（keeps_junior_rank にも対応） */
+export const getBeltForProfile = (profile: Pick<Profile, 'kyu' | 'birthday' | 'keeps_junior_rank'> | null | undefined): string => {
   if (!profile) return '白帯'
   const k = normalizeKyu(profile.kyu)
   const ippan = isIppan(profile)
