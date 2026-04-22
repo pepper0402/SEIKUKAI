@@ -81,6 +81,86 @@ export const DAN_COLORS: Record<string, { bg: string; text: string }> = {
   '黒帯': { bg: '#1a1a1a', text: '#fff' },
 }
 
+// ==========================================================================
+// 帯カラー・帯判定ロジック（age-aware）
+// 15歳以上を「一般」とし、6/5級=紫、4/3級=一般緑、2/1級=一般茶、段=一般黒
+// 14歳以下を「少年部」とし、6/5級=橙、4/3級=少年緑、2/1級=少年茶、段=少年黒
+// ==========================================================================
+
+export type BeltColor = { bg: string; text: string; light: string }
+
+export const BELT_COLORS: Record<string, BeltColor> = {
+  '白帯':     { bg: '#e0e0e0', text: '#1a1a1a', light: '#f5f5f5' },
+  '黄帯':     { bg: '#d4a800', text: '#1a1a1a', light: '#fef9e0' },
+  '青帯':     { bg: '#1a4fa0', text: '#ffffff', light: '#dbeafe' },
+  // 6/5級: 少年=橙 / 一般=紫
+  '橙帯':     { bg: '#c04a00', text: '#ffffff', light: '#ffedd5' },
+  '紫帯':     { bg: '#6d28d9', text: '#ffffff', light: '#ede9fe' },
+  // 4/3級: 少年=明るい緑 / 一般=深緑
+  '少年緑帯': { bg: '#43a047', text: '#ffffff', light: '#c8e6c9' },
+  '一般緑帯': { bg: '#1b5e20', text: '#ffffff', light: '#a5d6a7' },
+  // 2/1級: 少年=明るい茶 / 一般=濃茶
+  '少年茶帯': { bg: '#8d6e63', text: '#ffffff', light: '#efebe9' },
+  '一般茶帯': { bg: '#4e342e', text: '#ffffff', light: '#bcaaa4' },
+  // 段: 少年=柔らかい黒（濃灰） / 一般=漆黒
+  '少年黒帯': { bg: '#424242', text: '#ffffff', light: '#e0e0e0' },
+  '一般黒帯': { bg: '#0a0a0a', text: '#ffffff', light: '#9e9e9e' },
+}
+
+// 管理画面ナビ用: 級の範囲でグルーピング（年齢に依らない）
+export const BELT_GRADE_MAP: Record<string, string[]> = {
+  '白帯':      ['無級'],
+  '黄帯':      ['準10級', '10級', '準9級', '9級'],
+  '青帯':      ['準8級', '8級', '準7級', '7級'],
+  '橙帯/紫帯': ['準6級', '6級', '準5級', '5級'],
+  '緑帯':      ['準4級', '4級', '準3級', '3級'],
+  '茶帯':      ['準2級', '2級', '準1級', '1級'],
+  '黒帯':      ['初段', '弍段', '参段', '四段', '五段'],
+}
+
+/** 年齢を計算（誕生日未設定のときは null） */
+export const calculateAgeFromBirthday = (birthday: string | null | undefined): number | null => {
+  if (!birthday) return null
+  const born = new Date(birthday)
+  if (isNaN(born.getTime())) return null
+  const today = new Date()
+  let age = today.getFullYear() - born.getFullYear()
+  const mDiff = today.getMonth() - born.getMonth()
+  if (mDiff < 0 || (mDiff === 0 && today.getDate() < born.getDate())) age--
+  return age
+}
+
+/** 15歳以上（高校生以上）を一般、それ未満を少年部とする。誕生日未設定は少年部扱い */
+export const isIppan = (profile: Pick<Profile, 'birthday'> | null | undefined): boolean => {
+  if (!profile) return false
+  const age = calculateAgeFromBirthday(profile.birthday)
+  return age !== null && age >= 15
+}
+
+/** プロファイル全体から age-aware な帯名を返す */
+export const getBeltForProfile = (profile: Pick<Profile, 'kyu' | 'birthday'> | null | undefined): string => {
+  if (!profile) return '白帯'
+  const k = normalizeKyu(profile.kyu)
+  const ippan = isIppan(profile)
+  if (k === '無級' || k.includes('準10級')) return '白帯'
+  if (k.includes('10級') || k.includes('9級')) return '黄帯'
+  if (k.includes('8級')  || k.includes('7級')) return '青帯'
+  if (k.includes('6級')  || k.includes('5級')) return ippan ? '紫帯' : '橙帯'
+  if (k.includes('4級')  || k.includes('3級')) return ippan ? '一般緑帯' : '少年緑帯'
+  if (k.includes('2級')  || k.includes('1級')) return ippan ? '一般茶帯' : '少年茶帯'
+  if (k.includes('段')) return ippan ? '一般黒帯' : '少年黒帯'
+  return '白帯'
+}
+
+/** ナビ用の帯カテゴリ（年齢に依らない、級の範囲ベース） */
+export const getBeltCategoryForGrade = (kyu: string): string => {
+  const k = normalizeKyu(kyu)
+  for (const [category, grades] of Object.entries(BELT_GRADE_MAP)) {
+    if (grades.includes(k)) return category
+  }
+  return '白帯'
+}
+
 // A=10 / B=6 / C=3 / D=0  → 10項目満点100点、80点以上で受験可（実地審査のエントリー資格）
 export const gradeToPoint = (g: string): number =>
   g === 'A' ? 10 : g === 'B' ? 6 : g === 'C' ? 3 : 0

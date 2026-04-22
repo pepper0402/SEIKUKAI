@@ -1,32 +1,26 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { supabase, Profile, Role, resolveRole, canCertifyDan, canCertifyKyu, canScore, getRoleLabel, KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu } from '../lib/supabase'
+import {
+  supabase, Profile, Role,
+  resolveRole, canCertifyDan, canCertifyKyu, canScore, getRoleLabel,
+  KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu,
+  BELT_COLORS, BELT_GRADE_MAP, getBeltCategoryForGrade, getBeltForProfile,
+} from '../lib/supabase'
 import StudentDashboard from './StudentDashboard'
 
 // --- ユーティリティ ---
 const allKyuList = KYU_OPTIONS.filter(k => k !== '')
 
-const BELT_GRADE_MAP: Record<string, string[]> = {
-  '白帯':      ['無級'],
-  '黄帯':      ['準10級', '10級', '準9級', '9級'],
-  '青帯':      ['準8級', '8級', '準7級', '7級'],
-  '橙帯/紫帯': ['準6級', '6級', '準5級', '5級'],
-  '緑帯':      ['準4級', '4級', '準3級', '3級'],
-  '茶帯':      ['準2級', '2級', '準1級', '1級'],
-  '黒帯':      ['初段', '弍段', '参段', '四段', '五段'],
+// ナビのカテゴリには専用の表示色を用意（カテゴリ色 = 少年/一般の中間または代表色）
+const NAV_BELT_COLORS: Record<string, { bg: string; text: string; light: string }> = {
+  '白帯':      BELT_COLORS['白帯'],
+  '黄帯':      BELT_COLORS['黄帯'],
+  '青帯':      BELT_COLORS['青帯'],
+  // 6/5級は橙/紫の混在カテゴリ。navは橙ベースで表示
+  '橙帯/紫帯': { bg: '#8b2fa0', text: '#ffffff', light: '#f3e5f5' },
+  '緑帯':      BELT_COLORS['少年緑帯'],
+  '茶帯':      BELT_COLORS['少年茶帯'],
+  '黒帯':      BELT_COLORS['少年黒帯'],
 }
-
-const BELT_COLORS: Record<string, { bg: string; text: string; light: string }> = {
-  '白帯':      { bg: '#e8e8e8', text: '#1a1a1a', light: '#f5f5f5' },
-  '黄帯':      { bg: '#d4a800', text: '#1a1a1a', light: '#fef3c7' },
-  '青帯':      { bg: '#1a4fa0', text: '#ffffff', light: '#dbeafe' },
-  '橙帯/紫帯': { bg: '#c04a00', text: '#ffffff', light: '#ffedd5' },
-  '緑帯':      { bg: '#186a18', text: '#ffffff', light: '#dcfce7' },
-  '茶帯':      { bg: '#5c2a0a', text: '#ffffff', light: '#fef3e2' },
-  '黒帯':      { bg: '#0d0d0d', text: '#ffffff', light: '#e5e5e5' },
-}
-
-const getBeltForGrade = (kyu: string): string =>
-  Object.entries(BELT_GRADE_MAP).find(([, grades]) => grades.includes(kyu))?.[0] ?? '白帯'
 
 
 
@@ -639,18 +633,20 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const [student, setStudent] = useState(initialStudent);
 
   const currentKyu = normalizeKyu(student.kyu);
-  const currentBelt = getBeltForGrade(currentKyu);
-  const currentBeltColor = BELT_COLORS[currentBelt];
+  // 生徒表示用（年齢込みの帯名・色）
+  const currentBelt = getBeltForProfile(student);
+  const currentBeltColor = BELT_COLORS[currentBelt] || BELT_COLORS['白帯'];
+  // ナビ用（級範囲ベースのカテゴリ）
+  const currentNavCategory = getBeltCategoryForGrade(currentKyu);
 
-  const [viewBelt, setViewBelt] = useState(currentBelt);
+  const [viewBelt, setViewBelt] = useState(currentNavCategory);
   const [viewGrade, setViewGrade] = useState(currentKyu);
 
   // 昇級後に帯・グレードタブを同期
   useEffect(() => {
-    const belt = getBeltForGrade(currentKyu);
-    setViewBelt(belt);
+    setViewBelt(currentNavCategory);
     setViewGrade(currentKyu);
-  }, [currentKyu]);
+  }, [currentKyu, currentNavCategory]);
 
   const handleBeltChange = (belt: string) => {
     setViewBelt(belt);
@@ -759,7 +755,8 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const currentKyuIdx = allKyuList.indexOf(currentKyu);
   const isGradeAccessible = (grade: string) => allKyuList.indexOf(grade) <= currentKyuIdx;
   const isBeltAccessible = (belt: string) => BELT_GRADE_MAP[belt].some(g => isGradeAccessible(g));
-  const vbc = BELT_COLORS[viewBelt];
+  // ナビ用の色。viewBeltはカテゴリ名（白帯/黄帯/青帯/橙帯/紫帯/緑帯/茶帯/黒帯）
+  const vbc = NAV_BELT_COLORS[viewBelt] || NAV_BELT_COLORS['白帯'];
   const progressPct = currentGradeMax > 0 ? Math.min((currentGradeScore / currentGradeMax) * 100, 100) : 0;
 
   return (
@@ -860,9 +857,9 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
         <p className="text-[8px] font-black text-gray-300 uppercase tracking-widest mb-2">Belt</p>
         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-3">
           {Object.keys(BELT_GRADE_MAP).map(belt => {
-            const bc = BELT_COLORS[belt];
+            const bc = NAV_BELT_COLORS[belt] || NAV_BELT_COLORS['白帯'];
             const isSelected = belt === viewBelt;
-            const isCurrent = belt === currentBelt;
+            const isCurrent = belt === currentNavCategory;
             const isLocked = !isBeltAccessible(belt);
             return (
               <button key={belt}

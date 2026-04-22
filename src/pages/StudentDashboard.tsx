@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { supabase, Profile, normalizeKyu } from '../lib/supabase'
+import { supabase, Profile, normalizeKyu, BELT_COLORS, getBeltForProfile } from '../lib/supabase'
 
 // --- アカウント設定モーダル（パスワード/メール変更） ---
 function AccountSettingsModal({ profile, onClose, onEmailChanged }: {
@@ -144,38 +144,6 @@ const calculateTrainingPeriod = (joinedDateStr: any) => {
   return years === 0 ? `${months}ヶ月` : `${years}年 ${months}ヶ月`;
 };
 
-const calculateAge = (birthdayStr: any) => {
-  if (!birthdayStr) return 0;
-  const born = new Date(birthdayStr);
-  const today = new Date();
-  let age = today.getFullYear() - born.getFullYear();
-  if (today.getMonth() - born.getMonth() < 0 || (today.getMonth() === born.getMonth() && today.getDate() < born.getDate())) age--;
-  return age;
-};
-
-const BELT_COLORS: Record<string, { bg: string; text: string; light: string }> = {
-  '白帯': { bg: '#e0e0e0', text: '#1a1a1a', light: '#f5f5f5' },
-  '黄帯': { bg: '#d4a800', text: '#1a1a1a', light: '#fef9e0' },
-  '青帯': { bg: '#1a4fa0', text: '#ffffff', light: '#dbeafe' },
-  '橙帯': { bg: '#c04a00', text: '#ffffff', light: '#ffedd5' },
-  '紫帯': { bg: '#6d28d9', text: '#ffffff', light: '#ede9fe' },
-  '緑帯': { bg: '#186a18', text: '#ffffff', light: '#dcfce7' },
-  '茶帯': { bg: '#5c2a0a', text: '#ffffff', light: '#fef3e2' },
-  '黒帯': { bg: '#111111', text: '#ffffff', light: '#e5e5e5' },
-};
-
-const getBeltName = (kyu: string, isGeneral: boolean): string => {
-  const k = kyu || '無級';
-  if (k === '無級' || k.includes('準10級')) return '白帯';
-  if (k.includes('10級') || k.includes('9級')) return '黄帯';
-  if (k.includes('8級') || k.includes('7級')) return '青帯';
-  if (k.includes('6級') || k.includes('5級')) return isGeneral ? '紫帯' : '橙帯';
-  if (k.includes('4級') || k.includes('3級')) return '緑帯';
-  if (k.includes('2級') || k.includes('1級')) return '茶帯';
-  if (k.includes('段')) return '黒帯';
-  return '白帯';
-};
-
 const gradeToScore = (grade: string | null) => {
   if (grade === 'A') return 10;
   if (grade === 'B') return 6;
@@ -192,8 +160,7 @@ export default function StudentDashboard({ profile, onReload }: { profile: Profi
   const [showSettings, setShowSettings] = useState(false)
 
   const currentKyu = useMemo(() => normalizeKyu(profile.kyu), [profile.kyu]);
-  const isGeneral = useMemo(() => calculateAge(profile.birthday) >= 15, [profile.birthday]);
-  const beltName = useMemo(() => getBeltName(currentKyu, isGeneral), [currentKyu, isGeneral]);
+  const beltName = useMemo(() => getBeltForProfile(profile), [profile]);
   const bc = BELT_COLORS[beltName] || BELT_COLORS['白帯'];
   const trainingPeriod = useMemo(() => calculateTrainingPeriod((profile as any).joined_at), [profile]);
 
