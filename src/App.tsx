@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase, Profile } from './lib/supabase'
-import { Session, User } from '@supabase/supabase-js'
+import { Session } from '@supabase/supabase-js'
 import LoginPage from './pages/LoginPage'
 import StudentDashboard from './pages/StudentDashboard'
 import AdminDashboard from './pages/AdminDashboard'
@@ -26,14 +26,14 @@ export default function App() {
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
-      if (data.session) loadProfile(data.session.user)
+      if (data.session?.user?.email) loadProfile(data.session.user.email)
       else setReady(true)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s)
-      if (s) {
-        loadProfile(s.user)
+      if (s?.user?.email) {
+        loadProfile(s.user.email)
       } else {
         setProfile(null)
         setReady(true)
@@ -66,29 +66,15 @@ export default function App() {
     }
   }, [profile])
 
-  // メール変更にも耐えるよう、user_id → login_email の順でルックアップ
-  // 見つかったら profiles.user_id をバックフィル
-  const loadProfile = async (authUser: User) => {
-    let found: Profile | null = null
-    if (authUser.id) {
-      const { data } = await supabase.from('profiles').select('*').eq('user_id', authUser.id).maybeSingle()
-      found = (data as Profile | null) ?? null
-    }
-    if (!found && authUser.email) {
-      const { data } = await supabase.from('profiles').select('*').eq('login_email', authUser.email).maybeSingle()
-      found = (data as Profile | null) ?? null
-      if (found && !found.user_id && authUser.id) {
-        // 初回ログインなどで user_id 未設定のレコードを補填
-        await supabase.from('profiles').update({ user_id: authUser.id }).eq('id', found.id)
-        found.user_id = authUser.id
-      }
-    }
-    // auth email と profile.login_email がズレていたら同期（メール変更時の整合性確保）
-    if (found && authUser.email && found.login_email !== authUser.email) {
-      await supabase.from('profiles').update({ login_email: authUser.email }).eq('id', found.id)
-      found.login_email = authUser.email
-    }
-    setProfile(found)
+  // login_email ベースで profile を引く。大小文字の違いを防ぐため小文字化
+  // ※ user_id ベースの堅牢化は RLS 再設計と合わせて将来対応
+  const loadProfile = async (email: string) => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('login_email', email.toLowerCase())
+      .maybeSingle()
+    setProfile((data as Profile | null) ?? null)
     setReady(true)
   }
 
@@ -146,9 +132,9 @@ export default function App() {
         </button>
       </div>
     )
-    return <AdminDashboard profile={profile} onReload={() => session && loadProfile(session.user)} />
+    return <AdminDashboard profile={profile} onReload={() => session?.user?.email && loadProfile(session.user.email)} />
   }
 
   // 生徒モードでの表示
-  return <StudentDashboard profile={profile} onReload={() => session && loadProfile(session.user)} />
+  return <StudentDashboard profile={profile} onReload={() => session?.user?.email && loadProfile(session.user.email)} />
 }
