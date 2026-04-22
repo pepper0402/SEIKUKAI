@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { supabase, Profile, resolveRole, canCertifyDan, canCertifyKyu, canScore, getRoleLabel, KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu } from '../lib/supabase'
+import { supabase, Profile, Role, resolveRole, canCertifyDan, canCertifyKyu, canScore, getRoleLabel, KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu } from '../lib/supabase'
 import StudentDashboard from './StudentDashboard'
 
 // --- ユーティリティ ---
@@ -45,19 +45,25 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [criteriaVersion, setCriteriaVersion] = useState(0)
   const [showAddStudent, setShowAddStudent] = useState(false)
+  // マスターのみ: スタッフ（管理者アカウント）を一覧に含めるトグル
+  const [includeStaff, setIncludeStaff] = useState(false)
 
   const canDeleteAll = isMaster
   const canBulkImportStudents = isMaster
 
   const loadStudents = useCallback(async () => {
-    // 支部長は自分の支部のメンバーのみ取得
-    let query = supabase.from('profiles').select('*').eq('is_admin', false)
+    let query = supabase.from('profiles').select('*')
+    // マスターで「スタッフを表示」OFF、または支部長なら is_admin=false に限定
+    if (!(isMaster && includeStaff)) {
+      query = query.eq('is_admin', false)
+    }
+    // 支部長は自分の支部のメンバーのみ
     if (isBranchChief && adminBranch) {
       query = query.eq('branch', adminBranch)
     }
     const { data } = await query
     if (data) setStudents(data);
-  }, [isBranchChief, adminBranch])
+  }, [isMaster, isBranchChief, adminBranch, includeStaff])
 
   useEffect(() => {
     loadStudents()
@@ -231,20 +237,36 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
                 <option value="kyu" className="text-black">級順</option>
               </select>
             </div>
+            {isMaster && (
+              <label className="flex items-center gap-2 px-2 py-1.5 bg-white/5 rounded-lg text-[9px] font-black cursor-pointer select-none">
+                <input type="checkbox" checked={includeStaff} onChange={(e) => setIncludeStaff(e.target.checked)}
+                  className="accent-orange-500" />
+                <span className="opacity-80">スタッフ（支部長・指導員）も表示</span>
+              </label>
+            )}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
-          {filteredStudents.map(s => (
-            <div key={s.id} onClick={() => {setSelectedStudentId(s.id); if(window.innerWidth<768)setIsSidebarOpen(false);}} className={`p-5 border-l-4 cursor-pointer transition-all ${selectedStudentId === s.id ? 'bg-orange-50 border-orange-500 shadow-inner' : 'border-transparent hover:bg-gray-50'}`}>
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="font-black text-sm">{s.name}</p>
-                  <p className="text-[9px] font-bold text-orange-500 uppercase">{normalizeKyu(s.kyu)}</p>
+          {filteredStudents.map(s => {
+            const sRole = resolveRole(s);
+            const isStaff = sRole !== 'student';
+            return (
+              <div key={s.id} onClick={() => {setSelectedStudentId(s.id); if(window.innerWidth<768)setIsSidebarOpen(false);}} className={`p-5 border-l-4 cursor-pointer transition-all ${selectedStudentId === s.id ? 'bg-orange-50 border-orange-500 shadow-inner' : 'border-transparent hover:bg-gray-50'}`}>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <p className="font-black text-sm">{s.name}</p>
+                      {isStaff && (
+                        <span className="text-[7px] bg-[#001f3f] text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider">{getRoleLabel(sRole)}</span>
+                      )}
+                    </div>
+                    <p className="text-[9px] font-bold text-orange-500 uppercase">{normalizeKyu(s.kyu)}</p>
+                  </div>
+                  <span className="text-[8px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-400 font-bold">{s.branch}</span>
                 </div>
-                <span className="text-[8px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-400 font-bold">{s.branch}</span>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -405,6 +427,8 @@ function AddStudentModal({ branches, lockedBranch, onClose, onAdded }: { branche
 // --- 編集パネル ---
 function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; adminProfile: Profile; onClose: () => void; onSave: (updated: any) => void }) {
   const adminRole = resolveRole(adminProfile);
+  const isSelf = student.id === adminProfile.id;
+  const canAssignRole = adminRole === 'master' && !isSelf;
   const [form, setForm] = useState({
     name: student.name || '',
     kyu: normalizeKyu(student.kyu),
@@ -412,6 +436,7 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
     birthday: toDateInput(student.birthday),
     joined_at: toDateInput(student.joined_at),
     gakuinen: (student.gakuinen || '').trim(),
+    role: (resolveRole(student) as Role),
   });
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -436,17 +461,28 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
     : KYU_GRADES;
 
   const handleSave = async () => {
+    // 支部長に昇格する場合は支部が必須
+    if (canAssignRole && form.role === 'branch' && !form.branch.trim()) {
+      alert('支部長には所属支部が必須です。支部を入力してください。');
+      return;
+    }
     setSaving(true);
-    const { error } = await supabase.from('profiles').update({
+    const updatePayload: Record<string, any> = {
       name: form.name,
       kyu: form.kyu,
       branch: form.branch,
       birthday: form.birthday || null,
       joined_at: form.joined_at || null,
       gakuinen: form.gakuinen,
-    }).eq('id', student.id);
+    };
+    // マスターのみ role / is_admin を更新可能（自分自身は除く）
+    if (canAssignRole) {
+      updatePayload.role = form.role;
+      updatePayload.is_admin = form.role !== 'student';
+    }
+    const { error } = await supabase.from('profiles').update(updatePayload).eq('id', student.id);
     setSaving(false);
-    if (!error) onSave({ ...student, ...form });
+    if (!error) onSave({ ...student, ...form, is_admin: canAssignRole ? form.role !== 'student' : student.is_admin });
     else alert('保存に失敗しました: ' + error.message);
   };
 
@@ -529,6 +565,36 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
           </div>
 
         </div>
+
+        {/* 権限設定（マスター限定） */}
+        {canAssignRole && (
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-2">
+              権限（マスター限定）
+            </label>
+            <select
+              value={form.role}
+              onChange={e => setForm({ ...form, role: e.target.value as Role })}
+              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]"
+            >
+              <option value="student">会員</option>
+              <option value="instructor">指導員</option>
+              <option value="branch">支部長</option>
+              <option value="master">マスター</option>
+            </select>
+            {form.role === 'branch' && (
+              <p className="text-[10px] text-orange-600 mt-2 font-bold">⚠ 支部長には所属支部が必須です。</p>
+            )}
+            {form.role !== 'student' && (
+              <p className="text-[10px] text-blue-600 mt-2 font-bold">保存時に管理者フラグ（is_admin）が自動で有効になります。</p>
+            )}
+          </div>
+        )}
+        {isSelf && adminRole === 'master' && (
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <p className="text-[10px] text-gray-400 font-bold">※自分自身の権限は変更できません（誤操作防止）。Supabase側で直接操作してください。</p>
+          </div>
+        )}
 
         {/* パスワードリセット（管理者操作） */}
         <div className="mt-6 pt-6 border-t border-gray-100">
