@@ -81,11 +81,11 @@ export const DAN_COLORS: Record<string, { bg: string; text: string }> = {
   '黒帯': { bg: '#1a1a1a', text: '#fff' },
 }
 
-// A=10 / B=6 / C=3 / D=0  → 10項目満点100点、80点以上合格
+// A=10 / B=6 / C=3 / D=0  → 10項目満点100点、80点以上で受験可（実地審査のエントリー資格）
 export const gradeToPoint = (g: string): number =>
   g === 'A' ? 10 : g === 'B' ? 6 : g === 'C' ? 3 : 0
 
-export const PASS_SCORE = 80
+export const ELIGIBLE_SCORE = 80
 
 // 役割ごとの権限
 export const canCertifyDan = (role: Role) => role === 'master'

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { supabase, Profile, resolveRole, canCertifyDan, canCertifyKyu, canScore, KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu } from '../lib/supabase'
+import { supabase, Profile, resolveRole, canCertifyDan, canCertifyKyu, canScore, getRoleLabel, KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu } from '../lib/supabase'
 import StudentDashboard from './StudentDashboard'
 
 // --- ユーティリティ ---
@@ -31,22 +31,33 @@ const getBeltForGrade = (kyu: string): string =>
 
 
 export default function AdminDashboard({ profile: adminProfile, onReload }: { profile: Profile; onReload?: () => void }) {
+  const adminRole = resolveRole(adminProfile)
+  const isMaster = adminRole === 'master'
+  const isBranchChief = adminRole === 'branch'
+  const adminBranch = adminProfile.branch || ''
+
   const [students, setStudents] = useState<Profile[]>([])
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [branchFilter, setBranchFilter] = useState('すべて')
+  // 支部長は自分の支部に固定。マスターは「すべて」デフォルト
+  const [branchFilter, setBranchFilter] = useState(isBranchChief && adminBranch ? adminBranch : 'すべて')
   const [sortBy, setSortBy] = useState<'name' | 'kyu'>('name')
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [criteriaVersion, setCriteriaVersion] = useState(0)
   const [showAddStudent, setShowAddStudent] = useState(false)
 
-  const adminRole = resolveRole(adminProfile)
-  const canDeleteAll = adminRole === 'master'
+  const canDeleteAll = isMaster
+  const canBulkImportStudents = isMaster
 
   const loadStudents = useCallback(async () => {
-    const { data } = await supabase.from('profiles').select('*').eq('is_admin', false)
+    // 支部長は自分の支部のメンバーのみ取得
+    let query = supabase.from('profiles').select('*').eq('is_admin', false)
+    if (isBranchChief && adminBranch) {
+      query = query.eq('branch', adminBranch)
+    }
+    const { data } = await query
     if (data) setStudents(data);
-  }, [])
+  }, [isBranchChief, adminBranch])
 
   useEffect(() => {
     loadStudents()
@@ -133,9 +144,11 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
   const selectedStudent = useMemo(() => students.find(s => s.id === selectedStudentId) || null, [students, selectedStudentId]);
 
   const allBranchList = useMemo(() => {
-    const branches = students.map(s => s.branch).filter(Boolean)
+    // 支部長は自分の支部のみ。マスターは全支部（プリセット＋実データ）
+    if (isBranchChief && adminBranch) return [adminBranch]
+    const branches = students.map(s => s.branch).filter(Boolean) as string[]
     return Array.from(new Set(['池田', '川西', '宝塚', ...branches])).sort()
-  }, [students])
+  }, [students, isBranchChief, adminBranch])
 
   const filteredStudents = useMemo(() => {
     let result = students.filter(s => {
@@ -155,18 +168,26 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
 
       <div className={`fixed inset-y-0 left-0 z-40 w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
         <div className="p-6 bg-[#001f3f] text-white">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-lg font-black italic uppercase leading-none">誠空会 管理パネル</h1>
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h1 className="text-lg font-black italic uppercase leading-none">誠空会 管理パネル</h1>
+              <p className="text-[9px] font-black uppercase tracking-widest opacity-50 mt-1">
+                {getRoleLabel(adminRole)}
+                {isBranchChief && adminBranch ? ` / ${adminBranch}支部` : ''}
+              </p>
+            </div>
             <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase">Logout</button>
           </div>
 
-          <div className="flex gap-2 mb-2">
-            <button onClick={() => handleCsvImport('students')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">生徒CSV読込</button>
-            <button onClick={() => handleCsvImport('criteria')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">審査CSV読込</button>
-          </div>
+          {canBulkImportStudents && (
+            <div className="flex gap-2 mb-2">
+              <button onClick={() => handleCsvImport('students')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">生徒CSV読込</button>
+              <button onClick={() => handleCsvImport('criteria')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">審査CSV読込</button>
+            </div>
+          )}
           <button onClick={() => setShowAddStudent(true)}
             className="w-full py-2 bg-orange-500 hover:bg-orange-600 rounded-lg text-[10px] font-black border border-orange-400 mb-2">
-            ＋ 生徒を個別に追加
+            ＋ {isBranchChief && adminBranch ? `${adminBranch}支部の` : ''}生徒を追加
           </button>
           {canDeleteAll && (
             <div className="flex gap-2 mb-4">
@@ -195,8 +216,14 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
           <div className="space-y-2">
             <input type="text" placeholder="名前・級で検索..." className="w-full bg-white/10 border-none rounded-xl px-4 py-2 text-xs text-white outline-none focus:bg-white focus:text-[#001f3f]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             <div className="flex gap-1">
-              <select className="flex-1 bg-white/10 rounded-xl px-2 py-2 text-[9px] font-black outline-none" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-                <option value="すべて" className="text-black">全支部</option>
+              <select
+                className="flex-1 bg-white/10 rounded-xl px-2 py-2 text-[9px] font-black outline-none disabled:opacity-60"
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                disabled={isBranchChief}
+                title={isBranchChief ? '支部長は自分の支部のみ表示されます' : undefined}
+              >
+                {isMaster && <option value="すべて" className="text-black">全支部</option>}
                 {allBranchList.map(b => <option key={b} value={b} className="text-black">{b}</option>)}
               </select>
               <select className="flex-1 bg-white/10 rounded-xl px-2 py-2 text-[9px] font-black outline-none" value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}>
@@ -234,6 +261,7 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
       {showAddStudent && (
         <AddStudentModal
           branches={allBranchList}
+          lockedBranch={isBranchChief ? adminBranch : null}
           onClose={() => setShowAddStudent(false)}
           onAdded={(newStudent) => {
             setShowAddStudent(false);
@@ -254,12 +282,12 @@ const toDateInput = (v: string | null | undefined): string => {
 };
 
 // --- 生徒追加モーダル ---
-function AddStudentModal({ branches, onClose, onAdded }: { branches: string[]; onClose: () => void; onAdded: (s: any) => void }) {
+function AddStudentModal({ branches, lockedBranch, onClose, onAdded }: { branches: string[]; lockedBranch: string | null; onClose: () => void; onAdded: (s: any) => void }) {
   const [form, setForm] = useState({
     name: '',
     login_email: '',
     kyu: '無級',
-    branch: branches[0] || '',
+    branch: lockedBranch || branches[0] || '',
     birthday: '',
     joined_at: '',
     gakuinen: '',
@@ -271,12 +299,14 @@ function AddStudentModal({ branches, onClose, onAdded }: { branches: string[]; o
       alert('名前とメールアドレスは必須です。');
       return;
     }
+    // 支部長は自分の支部以外には登録できない（サーバー側対策は将来のRLSで実施）
+    const branchToSave = lockedBranch || form.branch;
     setSaving(true);
     const { data, error } = await supabase.from('profiles').insert({
       name: form.name.trim(),
       login_email: form.login_email.trim().toLowerCase(),
       kyu: form.kyu,
-      branch: form.branch || null,
+      branch: branchToSave || null,
       birthday: form.birthday || null,
       joined_at: form.joined_at || null,
       gakuinen: form.gakuinen || null,
@@ -321,10 +351,14 @@ function AddStudentModal({ branches, onClose, onAdded }: { branches: string[]; o
               </select>
             </div>
             <div>
-              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">支部</label>
-              <input type="text" value={form.branch} onChange={e => setForm({ ...form, branch: e.target.value })}
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">
+                支部{lockedBranch ? '（自支部に固定）' : ''}
+              </label>
+              <input type="text" value={form.branch}
+                onChange={e => !lockedBranch && setForm({ ...form, branch: e.target.value })}
+                disabled={!!lockedBranch}
                 list="add-branch-list"
-                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f] disabled:bg-gray-50 disabled:text-gray-400" />
               <datalist id="add-branch-list">
                 {branches.map(b => <option key={b} value={b} />)}
               </datalist>
@@ -450,12 +484,15 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
           </div>
 
           <div>
-            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">支部</label>
+            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">
+              支部{adminRole === 'branch' ? '（支部長は変更不可）' : ''}
+            </label>
             <input
               type="text"
               value={form.branch}
               onChange={e => setForm({ ...form, branch: e.target.value })}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]"
+              disabled={adminRole === 'branch'}
+              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f] disabled:bg-gray-50 disabled:text-gray-400"
             />
           </div>
 
@@ -601,7 +638,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
 
   const handlePromote = async (step: number = 1) => {
     if (!isEligible) {
-      alert(`合格点（80点）に達していません。\n現在の点数：${currentGradeScore}点 / ${currentGradeMax}点`);
+      alert(`受験可ライン（80点）に達していません。\n現在の点数：${currentGradeScore}点 / ${currentGradeMax}点`);
       return;
     }
     const currentIdx = allKyuList.indexOf(currentKyu);
@@ -696,7 +733,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
             </div>
             {isEligible ? (
               <div className="px-3 py-2 rounded-2xl" style={{ backgroundColor: 'rgba(74,222,128,0.18)', border: '1.5px solid rgba(74,222,128,0.4)' }}>
-                <p className="text-[9px] font-black text-green-400 uppercase tracking-wide leading-none">合格圏内</p>
+                <p className="text-[9px] font-black text-green-400 uppercase tracking-wide leading-none">受験可</p>
               </div>
             ) : (
               <div className="text-right opacity-40">
@@ -716,7 +753,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
               )}
             </div>
             <div className="flex justify-between text-[7px] font-black mt-1 opacity-35">
-              <span>0</span><span>合格 80点</span><span>{currentGradeMax > 0 ? `満点 ${currentGradeMax}` : ''}</span>
+              <span>0</span><span>受験可 80点</span><span>{currentGradeMax > 0 ? `満点 ${currentGradeMax}` : ''}</span>
             </div>
           </div>
 

@@ -169,7 +169,7 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
                 </div>
                 {isEligible ? (
                   <div className="px-3 py-2 rounded-xl text-center" style={{ backgroundColor: '#dcfce7', border: '1.5px solid #86efac' }}>
-                    <p className="text-[9px] font-black text-green-600 leading-none">合格圏内 ✓</p>
+                    <p className="text-[9px] font-black text-green-600 leading-none">受験可 ✓</p>
                   </div>
                 ) : maxScore > 0 ? (
                   <div className="text-right">
@@ -187,7 +187,7 @@ export default function StudentDashboard({ profile }: { profile: Profile }) {
                 )}
               </div>
               <div className="flex justify-between text-[7px] font-black text-gray-300">
-                <span>0</span><span>合格 80点</span><span>{maxScore > 0 ? `${maxScore}点満点` : ''}</span>
+                <span>0</span><span>受験可 80点</span><span>{maxScore > 0 ? `${maxScore}点満点` : ''}</span>
               </div>
             </>
           )}
