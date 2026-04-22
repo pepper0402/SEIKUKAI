@@ -66,15 +66,32 @@ export default function App() {
     }
   }, [profile])
 
-  // login_email ベースで profile を引く。大小文字の違いを防ぐため小文字化
-  // ※ user_id ベースの堅牢化は RLS 再設計と合わせて将来対応
+  // 大小文字やトリム差で profile が引けない事故を避けるため多段フォールバック
   const loadProfile = async (email: string) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('login_email', email.toLowerCase())
-      .maybeSingle()
-    setProfile((data as Profile | null) ?? null)
+    const trimmed = email.trim()
+    const lower = trimmed.toLowerCase()
+
+    // 1. そのまま exact
+    let r = await supabase.from('profiles').select('*').eq('login_email', trimmed).maybeSingle()
+    if (r.error) console.warn('[loadProfile] exact error:', r.error.message)
+
+    // 2. 小文字
+    if (!r.data && lower !== trimmed) {
+      r = await supabase.from('profiles').select('*').eq('login_email', lower).maybeSingle()
+      if (r.error) console.warn('[loadProfile] lower error:', r.error.message)
+    }
+
+    // 3. ilike（case-insensitive 完全一致）※%と_をエスケープ
+    if (!r.data) {
+      const safe = trimmed.replace(/([\\%_])/g, '\\$1')
+      r = await supabase.from('profiles').select('*').ilike('login_email', safe).maybeSingle()
+      if (r.error) console.warn('[loadProfile] ilike error:', r.error.message)
+    }
+
+    if (!r.data) {
+      console.error('[loadProfile] no profile matched for email:', email)
+    }
+    setProfile((r.data as Profile | null) ?? null)
     setReady(true)
   }
 
