@@ -185,6 +185,13 @@ export const resolveRole = (profile: Profile): Role => {
   return profile.is_admin ? 'master' : 'student'
 }
 
+/** video_url がhttp/httpsのURLとして有効か判定。"FALSE"等の誤データを弾く */
+export const isValidVideoUrl = (url: string | null | undefined): url is string => {
+  if (!url) return false
+  const s = String(url).trim()
+  return s.startsWith('http://') || s.startsWith('https://')
+}
+
 /** '正10級' / '10' / '準4' などを '10級' / '準4級' に正規化（段はそのまま） */
 export const normalizeKyu = (k: string | null | undefined): string => {
   if (k === null || k === undefined || k === '') return '無級'

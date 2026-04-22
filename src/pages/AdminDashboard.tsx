@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import {
   supabase, Profile, Role,
   resolveRole, canCertifyDan, canCertifyKyu, canScore, getRoleLabel,
-  KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu,
+  KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu, isValidVideoUrl,
   BELT_COLORS, BELT_GRADE_MAP, getBeltCategoryForGrade, getBeltForProfile,
 } from '../lib/supabase'
 import StudentDashboard from './StudentDashboard'
@@ -932,7 +932,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
                             style={{ backgroundColor: vbc.bg }}>★ 必須</span>
                         )}
                       </div>
-                      {c.video_url && (
+                      {isValidVideoUrl(c.video_url) && (
                         <a href={c.video_url} target="_blank" rel="noreferrer"
                           title="指導動画を再生"
                           className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-[13px] font-black text-white ml-2 shadow-md hover:scale-105 transition-transform"

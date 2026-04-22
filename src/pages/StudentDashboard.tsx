@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { supabase, Profile, normalizeKyu, BELT_COLORS, getBeltForProfile } from '../lib/supabase'
+import { supabase, Profile, normalizeKyu, isValidVideoUrl, BELT_COLORS, getBeltForProfile } from '../lib/supabase'
 
 // --- アカウント設定モーダル（パスワード/メール変更） ---
 function AccountSettingsModal({ profile, onClose, onEmailChanged }: {
@@ -383,7 +383,7 @@ export default function StudentDashboard({ profile, onReload }: { profile: Profi
                               )}
                             </div>
                             {/* 動画リンク */}
-                            {c.video_url && (
+                            {isValidVideoUrl(c.video_url) && (
                               <a href={c.video_url} target="_blank" rel="noreferrer"
                                 title="指導動画を再生"
                                 className="shrink-0 w-8 h-8 rounded-xl flex items-center justify-center text-[12px] font-black text-white shadow-md hover:scale-105 transition-transform"
