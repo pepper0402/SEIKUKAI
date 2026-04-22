@@ -5,13 +5,22 @@ import LoginPage from './pages/LoginPage'
 import StudentDashboard from './pages/StudentDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 
+const ADMIN_MODE_STORAGE_KEY = 'seikukai.isAdminMode'
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [ready, setReady]     = useState(false)
-  
-  // URLの「?admin=true」を読み取って初期状態を決定する
-  const [isAdminMode, setIsAdminMode] = useState(window.location.search.includes('admin=true'))
+
+  // URLクエリを最優先、無ければlocalStorageに永続化した前回のモードを復元
+  const [isAdminMode, setIsAdminMode] = useState(() => {
+    if (window.location.search.includes('admin=true')) return true
+    return localStorage.getItem(ADMIN_MODE_STORAGE_KEY) === 'true'
+  })
+
+  useEffect(() => {
+    localStorage.setItem(ADMIN_MODE_STORAGE_KEY, String(isAdminMode))
+  }, [isAdminMode])
 
   useEffect(() => {
     // URLの変更を監視してモードを切り替える（リンククリック対応）
@@ -33,6 +42,8 @@ export default function App() {
       } else {
         setProfile(null)
         setReady(true)
+        // サインアウト時はモードをリセット（別ユーザーが同ブラウザでログインしたときの誤表示を防ぐ）
+        setIsAdminMode(false)
       }
     })
 
