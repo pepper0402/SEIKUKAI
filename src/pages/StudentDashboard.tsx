@@ -385,8 +385,9 @@ export default function StudentDashboard({ profile, onReload }: { profile: Profi
                             {/* 動画リンク */}
                             {c.video_url && (
                               <a href={c.video_url} target="_blank" rel="noreferrer"
-                                className="shrink-0 w-8 h-8 rounded-xl flex items-center justify-center text-[9px] font-black"
-                                style={{ backgroundColor: bc.light, color: bc.bg }}>▶</a>
+                                title="指導動画を再生"
+                                className="shrink-0 w-8 h-8 rounded-xl flex items-center justify-center text-[12px] font-black text-white shadow-md hover:scale-105 transition-transform"
+                                style={{ backgroundColor: '#dc2626' }}>▶</a>
                             )}
                           </div>
                         ))}

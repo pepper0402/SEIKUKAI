@@ -934,8 +934,9 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
                       </div>
                       {c.video_url && (
                         <a href={c.video_url} target="_blank" rel="noreferrer"
-                          className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black border ml-2"
-                          style={{ backgroundColor: vbc.light, color: vbc.bg, borderColor: vbc.bg + '20' }}>▶</a>
+                          title="指導動画を再生"
+                          className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-[13px] font-black text-white ml-2 shadow-md hover:scale-105 transition-transform"
+                          style={{ backgroundColor: '#dc2626' }}>▶</a>
                       )}
                     </div>
                     {canScore(adminRole) ? (
