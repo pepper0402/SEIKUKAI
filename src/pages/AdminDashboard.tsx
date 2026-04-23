@@ -48,14 +48,9 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
   const [includeStaff, setIncludeStaff] = useState(false)
   // 退会・休会も一覧に含めるトグル
   const [includeInactive, setIncludeInactive] = useState(false)
-  // マスター任意追加の支部。まだ生徒が居ない支部もドロップダウンに表示するためlocalStorageに保持
-  const [customBranches, setCustomBranches] = useState<string[]>(() => {
-    try {
-      const raw = localStorage.getItem('seikukai:customBranches')
-      const parsed = raw ? JSON.parse(raw) : []
-      return Array.isArray(parsed) ? parsed.filter((x: any) => typeof x === 'string') : []
-    } catch { return [] }
-  })
+  // 支部マスタ（branches テーブル）。生徒ゼロの支部もドロップダウンに出せるようにDBで管理。
+  // { name, is_canonical } のペアで保持。is_canonical=TRUE は正式3支部（池田/川西/宝塚）で削除UI保護。
+  const [branchMaster, setBranchMaster] = useState<{ name: string; is_canonical: boolean }[]>([])
 
   const canDeleteAll = isMaster
   const canBulkImportStudents = isMaster
@@ -82,10 +77,30 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
     }
   }, [isMaster, isBranchScoped, adminBranch, includeStaff, includeInactive])
 
+  const loadBranches = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('branches')
+      .select('name, is_canonical')
+      .order('is_canonical', { ascending: false })
+      .order('name')
+    if (error) {
+      // テーブル未作成/権限エラー時はフォールバックで正式3支部だけ表示
+      console.warn('[branches] load failed:', error.message)
+      setBranchMaster([
+        { name: '池田', is_canonical: true },
+        { name: '川西', is_canonical: true },
+        { name: '宝塚', is_canonical: true },
+      ])
+      return
+    }
+    setBranchMaster((data || []) as any)
+  }, [])
+
   useEffect(() => {
     loadStudents()
+    loadBranches()
     if (window.innerWidth < 768) setIsSidebarOpen(false)
-  }, [loadStudents])
+  }, [loadStudents, loadBranches])
 
   const handleCsvImport = async (type: 'students' | 'criteria') => {
     const input = document.createElement('input');
@@ -167,18 +182,25 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
   const selectedStudent = useMemo(() => students.find(s => s.id === selectedStudentId) || null, [students, selectedStudentId]);
 
   const allBranchList = useMemo(() => {
-    // 支部長・指導員は自分の支部のみ。マスターは全支部（プリセット＋実データ＋手動追加）
+    // 支部長・指導員は自分の支部のみ。マスターは全支部（マスタテーブル＋実データをunion）
     // プリセット3支部は常に先頭・固定順（池田・川西・宝塚）、追加支部は後ろに50音順
     if (isBranchScoped && adminBranch) return [adminBranch]
     const CANONICAL = ['池田', '川西', '宝塚']
+    const masterNames = branchMaster.map(b => b.name)
     const dataBranches = students.map(s => s.branch).filter(Boolean) as string[]
-    const merged = [...customBranches, ...dataBranches]
+    const merged = [...masterNames, ...dataBranches]
     const extras = Array.from(new Set(merged.filter(b => !CANONICAL.includes(b))))
       .sort((a, b) => a.localeCompare(b, 'ja'))
     return [...CANONICAL, ...extras]
-  }, [students, customBranches, isBranchScoped, adminBranch])
+  }, [students, branchMaster, isBranchScoped, adminBranch])
 
-  const handleAddBranch = () => {
+  // 手動追加された（削除可能な）支部名の集合
+  const removableBranches = useMemo(
+    () => branchMaster.filter(b => !b.is_canonical).map(b => b.name),
+    [branchMaster]
+  )
+
+  const handleAddBranch = async () => {
     const name = window.prompt('追加する支部名を入力してください')
     if (!name) return
     const trimmed = name.trim()
@@ -187,23 +209,35 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
       alert(`支部「${trimmed}」は既に存在します。`)
       return
     }
-    const next = Array.from(new Set([...customBranches, trimmed]))
-    setCustomBranches(next)
-    try { localStorage.setItem('seikukai:customBranches', JSON.stringify(next)) } catch {}
+    const { error } = await supabase
+      .from('branches')
+      .insert({ name: trimmed, is_canonical: false, created_by: adminProfile.id })
+    if (error) {
+      alert(`支部の追加に失敗しました: ${error.message}`)
+      return
+    }
+    await loadBranches()
     alert(`支部「${trimmed}」を追加しました。生徒追加・編集のドロップダウンから選択できます。`)
   }
 
-  const handleRemoveCustomBranch = (name: string) => {
+  const handleRemoveCustomBranch = async (name: string) => {
     // 現在その支部に所属する生徒が居る場合は削除不可
     const inUse = students.some(s => s.branch === name)
     if (inUse) {
       alert(`支部「${name}」には所属生徒が居るため、ドロップダウンから外せません。\n先に所属生徒の支部を変更してください。`)
       return
     }
-    if (!confirm(`支部「${name}」をドロップダウンから削除しますか？\n（この支部に生徒を追加しない限り、リストに表示されなくなります）`)) return
-    const next = customBranches.filter(b => b !== name)
-    setCustomBranches(next)
-    try { localStorage.setItem('seikukai:customBranches', JSON.stringify(next)) } catch {}
+    if (!confirm(`支部「${name}」を削除しますか？\nこの支部に生徒を追加しない限りリストに表示されなくなります。`)) return
+    const { error } = await supabase
+      .from('branches')
+      .delete()
+      .eq('name', name)
+      .eq('is_canonical', false)
+    if (error) {
+      alert(`支部の削除に失敗しました: ${error.message}`)
+      return
+    }
+    await loadBranches()
   }
 
   const filteredStudents = useMemo(() => {
@@ -269,11 +303,11 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
               ＋ 支部を追加
             </button>
           )}
-          {isMaster && customBranches.length > 0 && (
+          {isMaster && removableBranches.length > 0 && (
             <div className="mb-2 p-2 bg-white/5 rounded-lg border border-white/10">
               <p className="text-[8px] font-black uppercase opacity-60 mb-1">手動追加の支部</p>
               <div className="flex flex-wrap gap-1">
-                {customBranches.map(b => (
+                {removableBranches.map(b => (
                   <button key={b} onClick={() => handleRemoveCustomBranch(b)}
                     title="クリックで削除（所属生徒がいると削除不可）"
                     className="text-[9px] bg-white/10 hover:bg-red-500/40 px-2 py-0.5 rounded font-black">
