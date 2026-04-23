@@ -24,17 +24,20 @@ const NAV_BELT_COLORS: Record<string, { bg: string; text: string; light: string 
 
 
 
-export default function AdminDashboard({ profile: adminProfile, onReload }: { profile: Profile; onReload?: () => void }) {
+export default function AdminDashboard({ profile: adminProfile, onReload, onSwitchToStudent }: { profile: Profile; onReload?: () => void; onSwitchToStudent?: () => void }) {
   const adminRole = resolveRole(adminProfile)
   const isMaster = adminRole === 'master'
   const isBranchChief = adminRole === 'branch'
+  const isInstructor = adminRole === 'instructor'
+  // 支部長・指導員は自支部スコープ
+  const isBranchScoped = isBranchChief || isInstructor
   const adminBranch = adminProfile.branch || ''
 
   const [students, setStudents] = useState<Profile[]>([])
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  // 支部長は自分の支部に固定。マスターは「すべて」デフォルト
-  const [branchFilter, setBranchFilter] = useState(isBranchChief && adminBranch ? adminBranch : 'すべて')
+  // 支部長・指導員は自分の支部に固定。マスターは「すべて」デフォルト
+  const [branchFilter, setBranchFilter] = useState(isBranchScoped && adminBranch ? adminBranch : 'すべて')
   const [sortBy, setSortBy] = useState<'name' | 'kyu'>('name')
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [criteriaVersion, setCriteriaVersion] = useState(0)
@@ -49,12 +52,12 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
 
   const loadStudents = useCallback(async () => {
     let query = supabase.from('profiles').select('*')
-    // マスターで「スタッフを表示」OFF、または支部長なら is_admin=false に限定
+    // マスターで「スタッフを表示」OFF、または支部長・指導員なら is_admin=false に限定
     if (!(isMaster && includeStaff)) {
       query = query.eq('is_admin', false)
     }
-    // 支部長は自分の支部のメンバーのみ
-    if (isBranchChief && adminBranch) {
+    // 支部長・指導員は自分の支部のメンバーのみ
+    if (isBranchScoped && adminBranch) {
       query = query.eq('branch', adminBranch)
     }
     const { data } = await query
@@ -65,7 +68,7 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
         : data.filter((p: any) => !p.status || p.status === 'active')
       setStudents(filtered);
     }
-  }, [isMaster, isBranchChief, adminBranch, includeStaff, includeInactive])
+  }, [isMaster, isBranchScoped, adminBranch, includeStaff, includeInactive])
 
   useEffect(() => {
     loadStudents()
@@ -152,15 +155,15 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
   const selectedStudent = useMemo(() => students.find(s => s.id === selectedStudentId) || null, [students, selectedStudentId]);
 
   const allBranchList = useMemo(() => {
-    // 支部長は自分の支部のみ。マスターは全支部（プリセット＋実データ）
+    // 支部長・指導員は自分の支部のみ。マスターは全支部（プリセット＋実データ）
     // プリセット3支部は常に先頭・固定順（池田・川西・宝塚）、追加支部は後ろに50音順
-    if (isBranchChief && adminBranch) return [adminBranch]
+    if (isBranchScoped && adminBranch) return [adminBranch]
     const CANONICAL = ['池田', '川西', '宝塚']
     const dataBranches = students.map(s => s.branch).filter(Boolean) as string[]
     const extras = Array.from(new Set(dataBranches.filter(b => !CANONICAL.includes(b))))
       .sort((a, b) => a.localeCompare(b, 'ja'))
     return [...CANONICAL, ...extras]
-  }, [students, isBranchChief, adminBranch])
+  }, [students, isBranchScoped, adminBranch])
 
   const filteredStudents = useMemo(() => {
     let result = students.filter(s => {
@@ -180,15 +183,24 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
 
       <div className={`fixed inset-y-0 left-0 z-40 w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
         <div className="p-6 bg-[#001f3f] text-white">
-          <div className="flex justify-between items-center mb-4">
-            <div>
+          <div className="flex justify-between items-start mb-4 gap-2">
+            <div className="min-w-0">
               <h1 className="text-lg font-black italic uppercase leading-none">誠空会 管理パネル</h1>
               <p className="text-[9px] font-black uppercase tracking-widest opacity-50 mt-1">
                 {getRoleLabel(adminRole)}
-                {isBranchChief && adminBranch ? ` / ${adminBranch}支部` : ''}
+                {isBranchScoped && adminBranch ? ` / ${adminBranch}支部` : ''}
               </p>
             </div>
-            <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase">Logout</button>
+            <div className="flex flex-col gap-1.5 shrink-0">
+              {onSwitchToStudent && (
+                <button onClick={onSwitchToStudent}
+                  className="text-[10px] bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg font-black"
+                  title="自分の生徒画面へ切替">
+                  生徒画面
+                </button>
+              )}
+              <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase">Logout</button>
+            </div>
           </div>
 
           {canBulkImportStudents && (
@@ -199,7 +211,7 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
           )}
           <button onClick={() => setShowAddStudent(true)}
             className="w-full py-2 bg-orange-500 hover:bg-orange-600 rounded-lg text-[10px] font-black border border-orange-400 mb-2">
-            ＋ {isBranchChief && adminBranch ? `${adminBranch}支部の` : ''}生徒を追加
+            ＋ {isBranchScoped && adminBranch ? `${adminBranch}支部の` : ''}生徒を追加
           </button>
           {canDeleteAll && (
             <div className="flex gap-2 mb-4">
@@ -232,8 +244,8 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
                 className="flex-1 bg-white/10 rounded-xl px-2 py-2 text-[9px] font-black outline-none disabled:opacity-60"
                 value={branchFilter}
                 onChange={(e) => setBranchFilter(e.target.value)}
-                disabled={isBranchChief}
-                title={isBranchChief ? '支部長は自分の支部のみ表示されます' : undefined}
+                disabled={isBranchScoped}
+                title={isBranchScoped ? '自分の支部のみ表示されます' : undefined}
               >
                 {isMaster && <option value="すべて" className="text-black">全支部</option>}
                 {allBranchList.map(b => <option key={b} value={b} className="text-black">{b}</option>)}
@@ -307,7 +319,7 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
       {showAddStudent && (
         <AddStudentModal
           branches={allBranchList}
-          lockedBranch={isBranchChief ? adminBranch : null}
+          lockedBranch={isBranchScoped ? adminBranch : null}
           onClose={() => setShowAddStudent(false)}
           onAdded={(newStudent) => {
             setShowAddStudent(false);

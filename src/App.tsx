@@ -164,7 +164,13 @@ export default function App() {
         </button>
       </div>
     )
-    return <AdminDashboard profile={profile} onReload={() => session?.user?.email && loadProfile(session.user.email)} />
+    return (
+      <AdminDashboard
+        profile={profile}
+        onReload={() => session?.user?.email && loadProfile(session.user.email)}
+        onSwitchToStudent={() => toggleMode(false)}
+      />
+    )
   }
 
   // 生徒モードでの表示（家族複数人の場合は切替UIを渡す）
@@ -174,6 +180,7 @@ export default function App() {
       onReload={() => session?.user?.email && loadProfile(session.user.email)}
       familyProfiles={familyProfiles.length > 1 ? familyProfiles : undefined}
       onSwitchProfile={familyProfiles.length > 1 ? switchProfile : undefined}
+      onSwitchToAdmin={profile.is_admin ? () => toggleMode(true) : undefined}
     />
   )
 }

@@ -151,11 +151,12 @@ const gradeToScore = (grade: string | null) => {
   return 0;
 };
 
-export default function StudentDashboard({ profile, onReload, familyProfiles, onSwitchProfile }: {
+export default function StudentDashboard({ profile, onReload, familyProfiles, onSwitchProfile, onSwitchToAdmin }: {
   profile: Profile;
   onReload?: () => void;
   familyProfiles?: Profile[];
   onSwitchProfile?: (id: string) => void;
+  onSwitchToAdmin?: () => void;
 }) {
   const [currentCriteria, setCurrentCriteria] = useState<any[]>([])
   const [historyData, setHistoryData] = useState<any[]>([])
@@ -260,6 +261,14 @@ export default function StudentDashboard({ profile, onReload, familyProfiles, on
                   <option key={p.id} value={p.id} className="text-black">{p.name}</option>
                 ))}
               </select>
+            )}
+            {onSwitchToAdmin && (
+              <button onClick={onSwitchToAdmin}
+                className="text-[9px] font-bold px-3 py-2 rounded-xl"
+                style={{ backgroundColor: 'rgba(0,0,0,0.18)', color: bc.text }}
+                title="管理画面へ切替">
+                管理画面へ
+              </button>
             )}
             <button onClick={() => setShowSettings(true)}
               className="text-[9px] font-bold px-3 py-2 rounded-xl flex items-center gap-1 justify-center"
