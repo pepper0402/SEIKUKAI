@@ -68,7 +68,7 @@ function AccountSettingsModal({ profile, onClose, onEmailChanged }: {
 
   return (
     <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md bg-white rounded-[32px] p-7 shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md bg-white rounded-[32px] p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-5">
           <h3 className="text-lg font-black text-[#001f3f]">アカウント設定</h3>
           <button onClick={onClose} className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 font-black">✕</button>

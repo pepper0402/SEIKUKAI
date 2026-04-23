@@ -364,7 +364,7 @@ function AddStudentModal({ branches, lockedBranch, onClose, onAdded }: { branche
 
   return (
     <div className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md bg-white rounded-[40px] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md bg-white rounded-[40px] p-8 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-black text-[#001f3f]">生徒を追加</h3>
           <button onClick={onClose} className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 font-black hover:bg-gray-200">✕</button>
@@ -531,7 +531,7 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
 
   return (
     <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md bg-white rounded-[40px] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md bg-white rounded-[40px] p-8 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-black text-[#001f3f]">データ修正</h3>
           <button onClick={onClose} className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 font-black hover:bg-gray-200">✕</button>
