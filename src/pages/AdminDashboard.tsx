@@ -47,6 +47,8 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [criteriaVersion, setCriteriaVersion] = useState(0)
   const [showAddStudent, setShowAddStudent] = useState(false)
+  // 管理メニュー（CSV読込・支部追加・全削除等の低頻度操作）の開閉
+  const [showAdminTools, setShowAdminTools] = useState(false)
   // マスターのみ: スタッフ（管理者アカウント）を一覧に含めるトグル
   const [includeStaff, setIncludeStaff] = useState(false)
   // 退会・休会も一覧に含めるトグル
@@ -407,77 +409,106 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
                   : ''}
               </p>
             </div>
-            <div className="flex flex-col gap-1.5 shrink-0">
-              <LangToggle className="text-[10px] bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg font-black" />
+            <div className="flex items-center gap-1 shrink-0">
+              <LangToggle className="text-[9px] bg-white/15 hover:bg-white/25 px-2 py-1.5 rounded-md font-black" />
               {onSwitchToStudent && (
                 <button onClick={onSwitchToStudent}
-                  className="text-[10px] bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg font-black"
+                  className="text-[9px] bg-white/15 hover:bg-white/25 px-2 py-1.5 rounded-md font-black"
                   title={t('自分の生徒画面へ切替', 'Switch to student view')}>
-                  {t('生徒画面', 'Student View')}
+                  {t('生徒画面', 'Student')}
                 </button>
               )}
-              <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase">Logout</button>
+              <button onClick={() => supabase.auth.signOut()}
+                className="text-[9px] bg-red-600/90 hover:bg-red-600 px-2 py-1.5 rounded-md font-black uppercase"
+                title="Logout">
+                Logout
+              </button>
             </div>
           </div>
 
-          {canBulkImportStudents && (
-            <div className="space-y-2 mb-2">
-              <button onClick={handleStudentsCsvImport} className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">{t('生徒CSV読込', 'Import Members CSV')}</button>
-              <div className="flex gap-2">
-                <button onClick={() => handleCriteriaCsvImport('junior')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">{t('少年部審査CSV', 'Junior Criteria CSV')}</button>
-                <button onClick={() => handleCriteriaCsvImport('general')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">{t('一般部審査CSV', 'General Criteria CSV')}</button>
-              </div>
-            </div>
-          )}
+          {/* ===== メインアクション（常に見える） ===== */}
           {canAddStudent && (
             <button onClick={() => setShowAddStudent(true)}
-              className="w-full py-2 bg-orange-500 hover:bg-orange-600 rounded-lg text-[10px] font-black border border-orange-400 mb-2">
+              className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 rounded-lg text-[11px] font-black border border-orange-400 mb-2">
               ＋ {isBranchChief && adminBranch
                    ? t(`${adminBranch}支部の生徒を追加`, `Add member to ${adminBranch} branch`)
                    : t('生徒を追加', 'Add Member')}
             </button>
           )}
-          {isMaster && (
-            <button onClick={handleAddBranch}
-              className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[10px] font-black border border-white/10 mb-2">
-              ＋ 支部を追加
-            </button>
-          )}
-          {isMaster && removableBranches.length > 0 && (
-            <div className="mb-2 p-2 bg-white/5 rounded-lg border border-white/10">
-              <p className="text-[8px] font-black uppercase opacity-60 mb-1">手動追加の支部</p>
-              <div className="flex flex-wrap gap-1">
-                {removableBranches.map(b => (
-                  <button key={b} onClick={() => handleRemoveCustomBranch(b)}
-                    title="クリックで削除（所属生徒がいると削除不可）"
-                    className="text-[9px] bg-white/10 hover:bg-red-500/40 px-2 py-0.5 rounded font-black">
-                    {b} ✕
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {canDeleteAll && (
-            <div className="flex gap-2 mb-4">
-              <button onClick={async () => {
-                const first = window.prompt('生徒データを全削除します。確認のため「削除」と入力してください。');
-                if (first !== '削除') return;
-                if (!window.confirm('本当に全ての生徒・評価・昇級履歴を削除しますか？この操作は取り消せません。')) return;
-                const { error } = await supabase.from('profiles').delete().eq('is_admin', false);
-                if (error) { alert('削除失敗: ' + error.message); return; }
-                setSelectedStudentId(null);
-                loadStudents();
-                alert('生徒データを全削除しました。');
-              }} className="flex-1 py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-[9px] font-black text-red-300 border border-red-500/20">
-                生徒 全削除
+
+          {/* ===== 管理メニュー（畳める低頻度操作） ===== */}
+          {(canBulkImportStudents || isMaster || canDeleteAll) && (
+            <div className="mb-2">
+              <button
+                onClick={() => setShowAdminTools(v => !v)}
+                className="w-full flex items-center justify-between py-1.5 px-3 text-[9px] font-black uppercase tracking-widest opacity-60 hover:opacity-100 hover:bg-white/5 rounded-lg transition-opacity">
+                <span>{t('管理メニュー', 'Admin Tools')}</span>
+                <span className="text-[10px]">{showAdminTools ? '▾' : '▸'}</span>
               </button>
-              <button onClick={async () => {
-                if (!window.confirm('審査基準データを全削除してよろしいですか？\n（再インポート前にご利用ください）')) return;
-                await supabase.from('criteria').delete().neq('id', 0);
-                alert('削除完了。CSVを再インポートしてください。');
-              }} className="flex-1 py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-[9px] font-black text-red-300 border border-red-500/20">
-                審査基準 全削除
-              </button>
+              {showAdminTools && (
+                <div className="mt-1.5 p-2 bg-white/5 rounded-lg border border-white/10 space-y-2">
+                  {/* CSV読込（1行3ボタン） */}
+                  {canBulkImportStudents && (
+                    <div>
+                      <p className="text-[8px] font-black uppercase opacity-50 mb-1 px-0.5">CSV {t('読込', 'Import')}</p>
+                      <div className="grid grid-cols-3 gap-1">
+                        <button onClick={handleStudentsCsvImport} className="py-1.5 bg-white/10 hover:bg-white/20 rounded text-[9px] font-black">{t('生徒', 'Members')}</button>
+                        <button onClick={() => handleCriteriaCsvImport('junior')} className="py-1.5 bg-white/10 hover:bg-white/20 rounded text-[9px] font-black">{t('少年部', 'Junior')}</button>
+                        <button onClick={() => handleCriteriaCsvImport('general')} className="py-1.5 bg-white/10 hover:bg-white/20 rounded text-[9px] font-black">{t('一般部', 'General')}</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 支部追加＋手動追加支部チップ */}
+                  {isMaster && (
+                    <div>
+                      <button onClick={handleAddBranch}
+                        className="w-full py-1.5 bg-white/10 hover:bg-white/20 rounded text-[9px] font-black">
+                        {t('＋ 支部を追加', '＋ Add Branch')}
+                      </button>
+                      {removableBranches.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {removableBranches.map(b => (
+                            <button key={b} onClick={() => handleRemoveCustomBranch(b)}
+                              title={t('クリックで削除（所属生徒がいると削除不可）', 'Click to remove (locked if members exist)')}
+                              className="text-[9px] bg-white/10 hover:bg-red-500/40 px-2 py-0.5 rounded font-black">
+                              {b} ✕
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 危険操作 */}
+                  {canDeleteAll && (
+                    <div>
+                      <p className="text-[8px] font-black uppercase opacity-50 mb-1 px-0.5 text-red-200">{t('危険操作', 'Danger Zone')}</p>
+                      <div className="grid grid-cols-2 gap-1">
+                        <button onClick={async () => {
+                          const first = window.prompt('生徒データを全削除します。確認のため「削除」と入力してください。');
+                          if (first !== '削除') return;
+                          if (!window.confirm('本当に全ての生徒・評価・昇級履歴を削除しますか？この操作は取り消せません。')) return;
+                          const { error } = await supabase.from('profiles').delete().eq('is_admin', false);
+                          if (error) { alert('削除失敗: ' + error.message); return; }
+                          setSelectedStudentId(null);
+                          loadStudents();
+                          alert('生徒データを全削除しました。');
+                        }} className="py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded text-[9px] font-black text-red-300 border border-red-500/20">
+                          {t('生徒 全削除', 'Delete all members')}
+                        </button>
+                        <button onClick={async () => {
+                          if (!window.confirm('審査基準データを全削除してよろしいですか？\n（再インポート前にご利用ください）')) return;
+                          await supabase.from('criteria').delete().neq('id', 0);
+                          alert('削除完了。CSVを再インポートしてください。');
+                        }} className="py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded text-[9px] font-black text-red-300 border border-red-500/20">
+                          {t('審査 全削除', 'Delete all criteria')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
