@@ -3,7 +3,7 @@ import {
   supabase, Profile, Role, MemberStatus, MEMBER_STATUS_LABEL, APP_URL,
   resolveRole, canCertifyDan, canCertifyKyu, canScore, getRoleLabel,
   KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu, isValidVideoUrl, logAudit,
-  BELT_COLORS, BELT_GRADE_MAP, getBeltCategoryForGrade, getBeltForProfile, needsIppanMigration,
+  BELT_COLORS, BELT_GRADE_MAP, getBeltCategoryForGrade, getBeltForProfile, isIppan, needsIppanMigration,
 } from '../lib/supabase'
 import { useLang, LangToggle } from '../lib/i18n'
 import StudentDashboard from './StudentDashboard'
@@ -11,16 +11,19 @@ import StudentDashboard from './StudentDashboard'
 // --- ユーティリティ ---
 const allKyuList = KYU_OPTIONS.filter(k => k !== '')
 
-// ナビのカテゴリには専用の表示色を用意（カテゴリ色 = 少年/一般の中間または代表色）
-const NAV_BELT_COLORS: Record<string, { bg: string; text: string; light: string }> = {
-  '白帯':      BELT_COLORS['白帯'],
-  '黄帯':      BELT_COLORS['黄帯'],
-  '青帯':      BELT_COLORS['青帯'],
-  // 6/5級は橙/紫の混在カテゴリ。navは橙ベースで表示
-  '橙帯/紫帯': { bg: '#8b2fa0', text: '#ffffff', light: '#f3e5f5' },
-  '緑帯':      BELT_COLORS['少年緑帯'],
-  '茶帯':      BELT_COLORS['少年茶帯'],
-  '黒帯':      BELT_COLORS['少年黒帯'],
+// ナビのカテゴリ色は閲覧中の生徒の 少年/一般 区分に合わせて動的に決める。
+// 少年部生徒を見ているときに紫帯（一般6/5級）色が出てしまう等の不整合を防ぐ。
+const getNavBeltColor = (category: string, ippan: boolean): { bg: string; text: string; light: string } => {
+  switch (category) {
+    case '白帯':      return BELT_COLORS['白帯']
+    case '黄帯':      return BELT_COLORS['黄帯']
+    case '青帯':      return BELT_COLORS['青帯']
+    case '橙帯/紫帯': return ippan ? BELT_COLORS['紫帯'] : BELT_COLORS['橙帯']
+    case '緑帯':      return ippan ? BELT_COLORS['一般緑帯'] : BELT_COLORS['少年緑帯']
+    case '茶帯':      return ippan ? BELT_COLORS['一般茶帯'] : BELT_COLORS['少年茶帯']
+    case '黒帯':      return ippan ? BELT_COLORS['一般黒帯'] : BELT_COLORS['少年黒帯']
+    default:          return BELT_COLORS['白帯']
+  }
 }
 
 
@@ -1274,7 +1277,9 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const isGradeAccessible = (grade: string) => allKyuList.indexOf(grade) <= currentKyuIdx;
   const isBeltAccessible = (belt: string) => BELT_GRADE_MAP[belt].some(g => isGradeAccessible(g));
   // ナビ用の色。viewBeltはカテゴリ名（白帯/黄帯/青帯/橙帯/紫帯/緑帯/茶帯/黒帯）
-  const vbc = NAV_BELT_COLORS[viewBelt] || NAV_BELT_COLORS['白帯'];
+  // 生徒が少年部か一般かで6/5級・緑・茶・黒の色味が変わるため動的に解決
+  const studentIsIppan = isIppan(student);
+  const vbc = getNavBeltColor(viewBelt, studentIsIppan);
   const progressPct = currentGradeMax > 0 ? Math.min((currentGradeScore / currentGradeMax) * 100, 100) : 0;
 
   return (
@@ -1403,7 +1408,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
         <p className="text-[8px] font-black text-gray-300 uppercase tracking-widest mb-2">Belt</p>
         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-3">
           {Object.keys(BELT_GRADE_MAP).map(belt => {
-            const bc = NAV_BELT_COLORS[belt] || NAV_BELT_COLORS['白帯'];
+            const bc = getNavBeltColor(belt, studentIsIppan);
             const isSelected = belt === viewBelt;
             const isCurrent = belt === currentNavCategory;
             const isLocked = !isBeltAccessible(belt);
