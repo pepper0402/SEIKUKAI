@@ -154,30 +154,48 @@ export const calculateAgeFromBirthday = (birthday: string | null | undefined): n
 }
 
 /**
- * 15歳以上（高校生以上）を一般、それ未満を少年部とする。
- * ただし keeps_junior_rank=true の場合は年齢に関わらず少年部扱い（一般へ未移行）。
- * 誕生日未設定は少年部扱い。
+ * 高校生以上（または社会人）を「一般」、小中学生以下を「少年部」とする。
+ * 判定優先順: keeps_junior_rank=true → gakuinen（学年）→ birthday から計算した年齢。
+ *   - keeps_junior_rank=true: 年齢/学年に関わらず少年部
+ *   - gakuinen が「高校〜」または「社会人」なら一般
+ *   - gakuinen が「小学/中学〜」なら少年部
+ *   - gakuinen 未設定のときは age>=15 を一般の近似とする
+ * 誕生日も学年も未設定なら少年部扱い。
+ *
+ * ※ 単純な年齢カットオフでは「早生まれ/4月生まれで中3のうちに15歳になる子」が
+ *   学年的にはまだ少年部なのに一般判定されてしまうため、学年を優先する。
  */
-export const isIppan = (profile: Pick<Profile, 'birthday' | 'keeps_junior_rank'> | null | undefined): boolean => {
+export const isIppan = (profile: Pick<Profile, 'birthday' | 'keeps_junior_rank' | 'gakuinen'> | null | undefined): boolean => {
   if (!profile) return false
   if (profile.keeps_junior_rank === true) return false
+  const g = (profile.gakuinen || '').trim()
+  if (g) {
+    if (g.startsWith('高校') || g === '社会人') return true
+    if (g.startsWith('小学') || g.startsWith('中学')) return false
+  }
   const age = calculateAgeFromBirthday(profile.birthday)
   return age !== null && age >= 15
 }
 
 /**
- * 「年齢上は一般だが、まだ少年部ランクを保持」＝一般審査へ未移行の状態かを判定。
- * true のとき UI に「未移行」バッジを表示する。
+ * 「本来なら一般ランクへ移行すべきだが、まだ少年部ランクを保持」状態の判定。
+ * 高校進学以降（または社会人）かつ keeps_junior_rank=true のとき true → UI に未移行バッジ。
+ * gakuinen 未設定時は age>=15 を近似として用いる。
  */
-export const needsIppanMigration = (profile: Pick<Profile, 'birthday' | 'keeps_junior_rank'> | null | undefined): boolean => {
+export const needsIppanMigration = (profile: Pick<Profile, 'birthday' | 'keeps_junior_rank' | 'gakuinen'> | null | undefined): boolean => {
   if (!profile) return false
   if (profile.keeps_junior_rank !== true) return false
+  const g = (profile.gakuinen || '').trim()
+  if (g) {
+    if (g.startsWith('小学') || g.startsWith('中学')) return false
+    if (g.startsWith('高校') || g === '社会人') return true
+  }
   const age = calculateAgeFromBirthday(profile.birthday)
   return age !== null && age >= 15
 }
 
-/** プロファイル全体から age-aware な帯名を返す（keeps_junior_rank にも対応） */
-export const getBeltForProfile = (profile: Pick<Profile, 'kyu' | 'birthday' | 'keeps_junior_rank'> | null | undefined): string => {
+/** プロファイル全体から age/学年-aware な帯名を返す（keeps_junior_rank にも対応） */
+export const getBeltForProfile = (profile: Pick<Profile, 'kyu' | 'birthday' | 'keeps_junior_rank' | 'gakuinen'> | null | undefined): string => {
   if (!profile) return '白帯'
   const k = normalizeKyu(profile.kyu)
   const ippan = isIppan(profile)
