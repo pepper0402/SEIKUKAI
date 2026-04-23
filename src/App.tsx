@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase, Profile } from './lib/supabase'
+import { useLang } from './lib/i18n'
 import { Session } from '@supabase/supabase-js'
 import LoginPage from './pages/LoginPage'
 import StudentDashboard from './pages/StudentDashboard'
@@ -9,6 +10,7 @@ const ADMIN_MODE_STORAGE_KEY = 'seikukai.isAdminMode'
 const SELECTED_PROFILE_STORAGE_KEY = 'seikukai.selectedProfileId'
 
 export default function App() {
+  const { t } = useLang()
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [familyProfiles, setFamilyProfiles] = useState<Profile[]>([])
@@ -120,7 +122,7 @@ export default function App() {
 
   if (!ready) return (
     <div className="min-h-screen bg-[#001f3f] flex items-center justify-center">
-      <div className="text-white text-xl font-bold tracking-widest animate-pulse">読み込み中...</div>
+      <div className="text-white text-xl font-bold tracking-widest animate-pulse">{t('読み込み中...', 'Loading...')}</div>
     </div>
   )
 
@@ -135,7 +137,9 @@ export default function App() {
             onClick={() => toggleMode(!isAdminMode)}
             className="text-[10px] text-[#001f3f]/30 hover:text-[#ff6600] font-bold transition-colors underline decoration-dotted"
           >
-            {isAdminMode ? '→ 生徒用ポータルへ' : '→ 管理者ログインはこちら'}
+            {isAdminMode
+              ? t('→ 生徒用ポータルへ', '→ Student Portal')
+              : t('→ 管理者ログインはこちら', '→ Admin Login')}
           </button>
         </div>
       </div>
@@ -150,17 +154,19 @@ export default function App() {
           <span className="text-red-500 text-3xl">⚠️</span>
         </div>
         <p className="text-white font-bold leading-relaxed">
-          管理者権限がありません。<br />
-          <span className="text-sm font-normal opacity-60 text-gray-300">データベースの is_admin 設定を確認してください。</span>
+          {t('管理者権限がありません。', 'No administrator privileges.')}<br />
+          <span className="text-sm font-normal opacity-60 text-gray-300">
+            {t('データベースの is_admin 設定を確認してください。', 'Please check the is_admin setting in the database.')}
+          </span>
         </p>
         <button
           onClick={() => {
-            toggleMode(false) // 生徒モードに戻す
+            toggleMode(false)
             supabase.auth.signOut()
           }}
           className="bg-[#ff6600] text-white px-8 py-3 rounded-xl font-bold shadow-lg"
         >
-          ログアウトして戻る
+          {t('ログアウトして戻る', 'Logout and return')}
         </button>
       </div>
     )

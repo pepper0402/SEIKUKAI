@@ -5,6 +5,7 @@ import {
   KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu, isValidVideoUrl, logAudit,
   BELT_COLORS, BELT_GRADE_MAP, getBeltCategoryForGrade, getBeltForProfile, needsIppanMigration,
 } from '../lib/supabase'
+import { useLang, LangToggle } from '../lib/i18n'
 import StudentDashboard from './StudentDashboard'
 
 // --- ユーティリティ ---
@@ -25,6 +26,7 @@ const NAV_BELT_COLORS: Record<string, { bg: string; text: string; light: string 
 
 
 export default function AdminDashboard({ profile: adminProfile, onReload, onSwitchToStudent }: { profile: Profile; onReload?: () => void; onSwitchToStudent?: () => void }) {
+  const { t } = useLang()
   const adminRole = resolveRole(adminProfile)
   const isMaster = adminRole === 'master'
   const isBranchChief = adminRole === 'branch'
@@ -224,18 +226,23 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
         <div className="p-6 bg-[#001f3f] text-white">
           <div className="flex justify-between items-start mb-4 gap-2">
             <div className="min-w-0">
-              <h1 className="text-lg font-black italic uppercase leading-none">誠空会 管理パネル</h1>
+              <h1 className="text-lg font-black italic uppercase leading-none">
+                {t('誠空会 管理パネル', 'SEIKUKAI Admin Panel')}
+              </h1>
               <p className="text-[9px] font-black uppercase tracking-widest opacity-50 mt-1">
                 {getRoleLabel(adminRole)}
-                {isBranchScoped && adminBranch ? ` / ${adminBranch}支部` : ''}
+                {isBranchScoped && adminBranch
+                  ? t(` / ${adminBranch}支部`, ` / ${adminBranch} branch`)
+                  : ''}
               </p>
             </div>
             <div className="flex flex-col gap-1.5 shrink-0">
+              <LangToggle className="text-[10px] bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg font-black" />
               {onSwitchToStudent && (
                 <button onClick={onSwitchToStudent}
                   className="text-[10px] bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg font-black"
-                  title="自分の生徒画面へ切替">
-                  生徒画面
+                  title={t('自分の生徒画面へ切替', 'Switch to student view')}>
+                  {t('生徒画面', 'Student View')}
                 </button>
               )}
               <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-red-600 px-3 py-1.5 rounded-lg font-black uppercase">Logout</button>
@@ -244,14 +251,16 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
 
           {canBulkImportStudents && (
             <div className="flex gap-2 mb-2">
-              <button onClick={() => handleCsvImport('students')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">生徒CSV読込</button>
-              <button onClick={() => handleCsvImport('criteria')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">審査CSV読込</button>
+              <button onClick={() => handleCsvImport('students')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">{t('生徒CSV読込', 'Import Members CSV')}</button>
+              <button onClick={() => handleCsvImport('criteria')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">{t('審査CSV読込', 'Import Criteria CSV')}</button>
             </div>
           )}
           {canAddStudent && (
             <button onClick={() => setShowAddStudent(true)}
               className="w-full py-2 bg-orange-500 hover:bg-orange-600 rounded-lg text-[10px] font-black border border-orange-400 mb-2">
-              ＋ {isBranchChief && adminBranch ? `${adminBranch}支部の` : ''}生徒を追加
+              ＋ {isBranchChief && adminBranch
+                   ? t(`${adminBranch}支部の生徒を追加`, `Add member to ${adminBranch} branch`)
+                   : t('生徒を追加', 'Add Member')}
             </button>
           )}
           {isMaster && (
@@ -299,34 +308,34 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
           )}
 
           <div className="space-y-2">
-            <input type="text" placeholder="名前・級で検索..." className="w-full bg-white/10 border-none rounded-xl px-4 py-2 text-xs text-white outline-none focus:bg-white focus:text-[#001f3f]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            <input type="text" placeholder={t('名前・級で検索...', 'Search by name / grade...')} className="w-full bg-white/10 border-none rounded-xl px-4 py-2 text-xs text-white outline-none focus:bg-white focus:text-[#001f3f]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             <div className="flex gap-1">
               <select
                 className="flex-1 bg-white/10 rounded-xl px-2 py-2 text-[9px] font-black outline-none disabled:opacity-60"
                 value={branchFilter}
                 onChange={(e) => setBranchFilter(e.target.value)}
                 disabled={isBranchScoped}
-                title={isBranchScoped ? '自分の支部のみ表示されます' : undefined}
+                title={isBranchScoped ? t('自分の支部のみ表示されます', 'Only your own branch is shown') : undefined}
               >
-                {isMaster && <option value="すべて" className="text-black">全支部</option>}
+                {isMaster && <option value="すべて" className="text-black">{t('全支部', 'All Branches')}</option>}
                 {allBranchList.map(b => <option key={b} value={b} className="text-black">{b}</option>)}
               </select>
               <select className="flex-1 bg-white/10 rounded-xl px-2 py-2 text-[9px] font-black outline-none" value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}>
-                <option value="name" className="text-black">名前順</option>
-                <option value="kyu" className="text-black">級順</option>
+                <option value="name" className="text-black">{t('名前順', 'By Name')}</option>
+                <option value="kyu" className="text-black">{t('級順', 'By Grade')}</option>
               </select>
             </div>
             {isMaster && (
               <label className="flex items-center gap-2 px-2 py-1.5 bg-white/5 rounded-lg text-[9px] font-black cursor-pointer select-none">
                 <input type="checkbox" checked={includeStaff} onChange={(e) => setIncludeStaff(e.target.checked)}
                   className="accent-orange-500" />
-                <span className="opacity-80">スタッフ（支部長・指導員）も表示</span>
+                <span className="opacity-80">{t('スタッフ（支部長・指導員）も表示', 'Include staff (chiefs/instructors)')}</span>
               </label>
             )}
             <label className="flex items-center gap-2 px-2 py-1.5 bg-white/5 rounded-lg text-[9px] font-black cursor-pointer select-none">
               <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)}
                 className="accent-orange-500" />
-              <span className="opacity-80">休会・退会者も表示</span>
+              <span className="opacity-80">{t('休会・退会者も表示', 'Include paused / resigned')}</span>
             </label>
           </div>
         </div>
@@ -348,13 +357,13 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
                         <span className="text-[7px] bg-[#001f3f] text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider">{getRoleLabel(sRole)}</span>
                       )}
                       {unmigrated && (
-                        <span className="text-[7px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-black" title="高校進学済・一般ランクへ未移行">⚠ 未移行</span>
+                        <span className="text-[7px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-black" title={t('高校進学済・一般ランクへ未移行', 'High school or above, pending migration to General rank')}>⚠ {t('未移行', 'Pending')}</span>
                       )}
                       {status === 'paused' && (
-                        <span className="text-[7px] bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded font-black">休会中</span>
+                        <span className="text-[7px] bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded font-black">{t('休会中', 'Paused')}</span>
                       )}
                       {status === 'resigned' && (
-                        <span className="text-[7px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black">退会済</span>
+                        <span className="text-[7px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black">{t('退会済', 'Resigned')}</span>
                       )}
                     </div>
                     <p className="text-[9px] font-bold text-orange-500 uppercase">{normalizeKyu(s.kyu)}</p>
@@ -1079,8 +1088,8 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
                 {needsIppanMigration(student) && (
                   <span className="text-[9px] font-black px-2 py-1 rounded"
                     style={{ backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}
-                    title="高校進学済・一般ランクへ未移行">
-                    ⚠ 一般未移行
+                    title={t('高校進学済・一般ランクへ未移行', 'High school or above, pending migration to General')}>
+                    ⚠ {t('一般未移行', 'Pending General')}
                   </span>
                 )}
               </div>
