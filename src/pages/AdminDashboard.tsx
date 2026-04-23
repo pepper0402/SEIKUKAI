@@ -46,6 +46,14 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
   const [includeStaff, setIncludeStaff] = useState(false)
   // 退会・休会も一覧に含めるトグル
   const [includeInactive, setIncludeInactive] = useState(false)
+  // マスター任意追加の支部。まだ生徒が居ない支部もドロップダウンに表示するためlocalStorageに保持
+  const [customBranches, setCustomBranches] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('seikukai:customBranches')
+      const parsed = raw ? JSON.parse(raw) : []
+      return Array.isArray(parsed) ? parsed.filter((x: any) => typeof x === 'string') : []
+    } catch { return [] }
+  })
 
   const canDeleteAll = isMaster
   const canBulkImportStudents = isMaster
@@ -157,15 +165,44 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
   const selectedStudent = useMemo(() => students.find(s => s.id === selectedStudentId) || null, [students, selectedStudentId]);
 
   const allBranchList = useMemo(() => {
-    // 支部長・指導員は自分の支部のみ。マスターは全支部（プリセット＋実データ）
+    // 支部長・指導員は自分の支部のみ。マスターは全支部（プリセット＋実データ＋手動追加）
     // プリセット3支部は常に先頭・固定順（池田・川西・宝塚）、追加支部は後ろに50音順
     if (isBranchScoped && adminBranch) return [adminBranch]
     const CANONICAL = ['池田', '川西', '宝塚']
     const dataBranches = students.map(s => s.branch).filter(Boolean) as string[]
-    const extras = Array.from(new Set(dataBranches.filter(b => !CANONICAL.includes(b))))
+    const merged = [...customBranches, ...dataBranches]
+    const extras = Array.from(new Set(merged.filter(b => !CANONICAL.includes(b))))
       .sort((a, b) => a.localeCompare(b, 'ja'))
     return [...CANONICAL, ...extras]
-  }, [students, isBranchScoped, adminBranch])
+  }, [students, customBranches, isBranchScoped, adminBranch])
+
+  const handleAddBranch = () => {
+    const name = window.prompt('追加する支部名を入力してください')
+    if (!name) return
+    const trimmed = name.trim()
+    if (!trimmed) return
+    if (allBranchList.includes(trimmed)) {
+      alert(`支部「${trimmed}」は既に存在します。`)
+      return
+    }
+    const next = Array.from(new Set([...customBranches, trimmed]))
+    setCustomBranches(next)
+    try { localStorage.setItem('seikukai:customBranches', JSON.stringify(next)) } catch {}
+    alert(`支部「${trimmed}」を追加しました。生徒追加・編集のドロップダウンから選択できます。`)
+  }
+
+  const handleRemoveCustomBranch = (name: string) => {
+    // 現在その支部に所属する生徒が居る場合は削除不可
+    const inUse = students.some(s => s.branch === name)
+    if (inUse) {
+      alert(`支部「${name}」には所属生徒が居るため、ドロップダウンから外せません。\n先に所属生徒の支部を変更してください。`)
+      return
+    }
+    if (!confirm(`支部「${name}」をドロップダウンから削除しますか？\n（この支部に生徒を追加しない限り、リストに表示されなくなります）`)) return
+    const next = customBranches.filter(b => b !== name)
+    setCustomBranches(next)
+    try { localStorage.setItem('seikukai:customBranches', JSON.stringify(next)) } catch {}
+  }
 
   const filteredStudents = useMemo(() => {
     let result = students.filter(s => {
@@ -216,6 +253,26 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
               className="w-full py-2 bg-orange-500 hover:bg-orange-600 rounded-lg text-[10px] font-black border border-orange-400 mb-2">
               ＋ {isBranchChief && adminBranch ? `${adminBranch}支部の` : ''}生徒を追加
             </button>
+          )}
+          {isMaster && (
+            <button onClick={handleAddBranch}
+              className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[10px] font-black border border-white/10 mb-2">
+              ＋ 支部を追加
+            </button>
+          )}
+          {isMaster && customBranches.length > 0 && (
+            <div className="mb-2 p-2 bg-white/5 rounded-lg border border-white/10">
+              <p className="text-[8px] font-black uppercase opacity-60 mb-1">手動追加の支部</p>
+              <div className="flex flex-wrap gap-1">
+                {customBranches.map(b => (
+                  <button key={b} onClick={() => handleRemoveCustomBranch(b)}
+                    title="クリックで削除（所属生徒がいると削除不可）"
+                    className="text-[9px] bg-white/10 hover:bg-red-500/40 px-2 py-0.5 rounded font-black">
+                    {b} ✕
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
           {canDeleteAll && (
             <div className="flex gap-2 mb-4">
