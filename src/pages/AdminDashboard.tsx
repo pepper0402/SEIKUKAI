@@ -131,7 +131,29 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
     if (window.innerWidth < 768) setIsSidebarOpen(false)
   }, [loadStudents, loadBranches])
 
-  const handleCsvImport = async (type: 'students' | 'criteria') => {
+  // ダブルクォート囲みのフィールド（URL内カンマ等）に対応したCSV行パーサ
+  const parseCsvRow = (row: string): string[] => {
+    const out: string[] = []
+    let cur = ''
+    let inQuotes = false
+    for (let i = 0; i < row.length; i++) {
+      const c = row[i]
+      if (c === '"') {
+        // ""（2連続）は1個のダブルクォートとして扱う
+        if (inQuotes && row[i + 1] === '"') { cur += '"'; i++; continue }
+        inQuotes = !inQuotes
+      } else if (c === ',' && !inQuotes) {
+        out.push(cur.trim())
+        cur = ''
+      } else {
+        cur += c
+      }
+    }
+    out.push(cur.trim())
+    return out
+  }
+
+  const handleStudentsCsvImport = async () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.csv';
@@ -142,66 +164,123 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
       reader.onload = async (event: any) => {
         const text = event.target.result;
         const rows = text.split('\n').slice(1).filter((r: string) => r.trim());
-        if (type === 'students') {
-          // CSV形式: 支部, 氏, 名, ヨミガナ, 性別, 入会日, 生年月日, 級/段, メールアドレス, パスワード
-          // 2008/06/04 や 1972/1/5 形式の日付を YYYY-MM-DD に変換
-          const toISODate = (s: string): string | null => {
-            if (!s) return null;
-            const m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
-            if (!m) return null;
-            const [, y, mo, d] = m;
-            return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
-          };
-          let ok = 0, skipped = 0, errors: string[] = [];
-          for (const row of rows) {
-            const cols = row.split(',').map((s: string) => s?.trim() || '');
-            if (cols.length < 9) { skipped++; continue; }
-            const [branch, sei, mei, , , joined_at_raw, birthday_raw, kyu, login_email] = cols;
-            const name = `${sei} ${mei}`.trim();
-            if (!name || !login_email) { skipped++; continue; }
-            const { error } = await supabase.from('profiles').upsert({
-              name,
-              kyu: kyu || null,
-              branch: branch || null,
-              birthday: toISODate(birthday_raw),
-              joined_at: toISODate(joined_at_raw),
-              login_email: login_email.toLowerCase(),
-              is_admin: false,
-            }, { onConflict: 'login_email' });
-            if (error) { skipped++; errors.push(`${name}: ${error.message}`); }
-            else ok++;
-          }
-          const errMsg = errors.length > 0 ? `\n\n最初のエラー:\n${errors.slice(0, 3).join('\n')}` : '';
-          alert(`インポート完了: ${ok}件更新/追加 / スキップ${skipped}件${errMsg}`);
-          loadStudents();
-        } else {
-          // Drill_Master.csv: drill_no, belt_ja, grade_ja, category, item_ja, item_en, is_required, video_url, notes
-          const batch: any[] = [];
-          for (const row of rows) {
-            const cols = row.split(',');
-            if (cols.length < 5) continue;
-            const gradeRaw = cols[2]?.trim() || '';
-            const dan = gradeRaw.startsWith('正') ? gradeRaw.slice(1) : gradeRaw;
-            const examination_type = cols[3]?.trim() || '';
-            const examination_content = cols[4]?.trim() || '';
-            const is_required = cols[6]?.trim()?.toUpperCase() === 'TRUE';
-            const video_url = cols[7]?.trim() || null;
-            if (!dan || !examination_content) continue;
-            batch.push({ dan, examination_type, examination_content, is_required, video_url });
-          }
-          if (batch.length === 0) {
-            alert('有効なデータが見つかりません。\nCSVの形式・文字コードを確認してください。');
-            return;
-          }
-          const { error } = await supabase.from('criteria').upsert(batch, { onConflict: 'dan,examination_type,examination_content' });
-          if (error) {
-            alert('インポートエラー:\n' + error.message);
-            return;
-          }
-          setCriteriaVersion((v: number) => v + 1);
-          alert(`審査基準 ${batch.length}件 インポート/更新完了`);
-          loadStudents();
+        // CSV形式: 支部, 氏, 名, ヨミガナ, 性別, 入会日, 生年月日, 級/段, メールアドレス, パスワード
+        const toISODate = (s: string): string | null => {
+          if (!s) return null;
+          const m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+          if (!m) return null;
+          const [, y, mo, d] = m;
+          return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        };
+        let ok = 0, skipped = 0, errors: string[] = [];
+        for (const row of rows) {
+          const cols = parseCsvRow(row);
+          if (cols.length < 9) { skipped++; continue; }
+          const [branch, sei, mei, , , joined_at_raw, birthday_raw, kyu, login_email] = cols;
+          const name = `${sei} ${mei}`.trim();
+          if (!name || !login_email) { skipped++; continue; }
+          const { error } = await supabase.from('profiles').upsert({
+            name,
+            kyu: kyu || null,
+            branch: branch || null,
+            birthday: toISODate(birthday_raw),
+            joined_at: toISODate(joined_at_raw),
+            login_email: login_email.toLowerCase(),
+            is_admin: false,
+          }, { onConflict: 'login_email' });
+          if (error) { skipped++; errors.push(`${name}: ${error.message}`); }
+          else ok++;
         }
+        const errMsg = errors.length > 0 ? `\n\n最初のエラー:\n${errors.slice(0, 3).join('\n')}` : '';
+        alert(`インポート完了: ${ok}件更新/追加 / スキップ${skipped}件${errMsg}`);
+        loadStudents();
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
+
+  // 新フォーマット審査CSV: 帯, 級, 種類, 内容, 動画
+  // ★プレフィックスは is_required=true のサイン（★形/★体力測定/★精神面）
+  const handleCriteriaCsvImport = async (division: 'junior' | 'general') => {
+    const divisionLabel = division === 'junior' ? '少年部' : '一般部';
+    if (!window.confirm(
+      `${divisionLabel}の審査基準を取込します。\n\n` +
+      `現在の ${divisionLabel}（division='${division}'）のデータは全削除され、\n` +
+      `CSV の内容で置き換わります。共通項目(division='both')と他方の区分は維持。\n\n続行しますか？`
+    )) return;
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = async (e: any) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (event: any) => {
+        const text = event.target.result;
+        const lines = text.split('\n').filter((r: string) => r.trim());
+        // 1行目はヘッダー: 帯, , 種類, 内容, 動画
+        const rows = lines.slice(1);
+        const batch: any[] = [];
+        for (const row of rows) {
+          const cols = parseCsvRow(row);
+          if (cols.length < 4) continue;
+          const [obi, kyuRaw, typeRaw, content, videoRaw] = cols;
+          if (!obi) continue;
+
+          // 級→dan（正プレフィックス除去。白帯で級空欄なら無級）
+          let dan = (kyuRaw || '').trim();
+          if (!dan) {
+            if (obi.startsWith('白')) dan = '無級';
+            else continue;
+          }
+          if (dan.startsWith('正')) dan = dan.slice(1);
+
+          // 種類→examination_type（★は is_required フラグ）
+          let examination_type = (typeRaw || '').trim();
+          let is_required = false;
+          if (examination_type.startsWith('★')) {
+            is_required = true;
+            examination_type = examination_type.slice(1).trim();
+          }
+
+          const examination_content = (content || '').trim();
+          if (!examination_content) continue;
+
+          const video_url = (videoRaw || '').trim() || null;
+
+          batch.push({
+            dan,
+            examination_type,
+            examination_content,
+            is_required,
+            video_url,
+            division,
+          });
+        }
+
+        if (batch.length === 0) {
+          alert('有効なデータが見つかりません。\nCSVの書式・文字コードを確認してください。');
+          return;
+        }
+
+        // 該当divisionを全削除 → バッチinsert（bothは温存）
+        const { error: delErr } = await supabase
+          .from('criteria')
+          .delete()
+          .eq('division', division);
+        if (delErr) {
+          alert(`既存データ削除失敗:\n${delErr.message}`);
+          return;
+        }
+        const { error: insErr } = await supabase.from('criteria').insert(batch);
+        if (insErr) {
+          alert(`インポートエラー:\n${insErr.message}`);
+          return;
+        }
+        setCriteriaVersion((v: number) => v + 1);
+        alert(`${divisionLabel}審査基準 ${batch.length}件 取込完了`);
       };
       reader.readAsText(file);
     };
@@ -342,9 +421,12 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
           </div>
 
           {canBulkImportStudents && (
-            <div className="flex gap-2 mb-2">
-              <button onClick={() => handleCsvImport('students')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">{t('生徒CSV読込', 'Import Members CSV')}</button>
-              <button onClick={() => handleCsvImport('criteria')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">{t('審査CSV読込', 'Import Criteria CSV')}</button>
+            <div className="space-y-2 mb-2">
+              <button onClick={handleStudentsCsvImport} className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">{t('生徒CSV読込', 'Import Members CSV')}</button>
+              <div className="flex gap-2">
+                <button onClick={() => handleCriteriaCsvImport('junior')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">{t('少年部審査CSV', 'Junior Criteria CSV')}</button>
+                <button onClick={() => handleCriteriaCsvImport('general')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">{t('一般部審査CSV', 'General Criteria CSV')}</button>
+              </div>
             </div>
           )}
           {canAddStudent && (
@@ -1113,10 +1195,15 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   useEffect(() => {
     async function fetchEvals() {
       setLoading(true);
+      const ippan = isIppan(student);
+      const divisionFilter = ippan ? 'general' : 'junior';
       const { data: crit } = await supabase.from('criteria').select('*').order('id')
       const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
-      const filtered = (crit || []).filter((c: any) => normalizeKyu(c.dan) === viewGrade);
-      console.log('[AdminDashboard/view] viewGrade=', viewGrade, 'total=', crit?.length, 'matched=', filtered.length);
+      const filtered = (crit || []).filter((c: any) =>
+        normalizeKyu(c.dan) === viewGrade
+        && (c.division === 'both' || c.division === divisionFilter || !c.division)
+      );
+      console.log('[AdminDashboard/view] viewGrade=', viewGrade, 'ippan=', ippan, 'total=', crit?.length, 'matched=', filtered.length);
       setCriteria(filtered.map((c: any) => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || 'D' })));
       setLoading(false);
     }
@@ -1147,9 +1234,14 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   // 現在の級スコア（昇級判定専用）― viewGradeに関わらず常にcurrentKyuで計算
   useEffect(() => {
     async function fetchCurrentGrade() {
+      const ippan = isIppan(student);
+      const divisionFilter = ippan ? 'general' : 'junior';
       const { data: crit } = await supabase.from('criteria').select('*').order('id')
       const { data: evals } = await supabase.from('evaluations').select('*').eq('student_id', student.id)
-      const filtered = (crit || []).filter((c: any) => normalizeKyu(c.dan) === currentKyu);
+      const filtered = (crit || []).filter((c: any) =>
+        normalizeKyu(c.dan) === currentKyu
+        && (c.division === 'both' || c.division === divisionFilter || !c.division)
+      );
       setCurrentGradeEvals(filtered.map((c: any) => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || 'D' })));
     }
     fetchCurrentGrade()

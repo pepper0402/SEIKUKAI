@@ -46,6 +46,9 @@ export type Profile = {
   parent_login_email?: string | null
 }
 
+/** 審査基準の分類: 少年部専用 / 一般部専用 / 両方共通 */
+export type Division = 'junior' | 'general' | 'both'
+
 export type Criterion = {
   id: number
   dan: string
@@ -53,6 +56,8 @@ export type Criterion = {
   examination_content: string
   video_url: string | null
   is_required: boolean
+  /** 対象区分。'both'なら全員、'junior'は少年部のみ、'general'は一般のみ表示 */
+  division: Division
 }
 
 export type Evaluation = {

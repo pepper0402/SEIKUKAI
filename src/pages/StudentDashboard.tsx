@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { supabase, Profile, normalizeKyu, isValidVideoUrl, BELT_COLORS, getBeltForProfile, needsIppanMigration } from '../lib/supabase'
+import { supabase, Profile, normalizeKyu, isValidVideoUrl, BELT_COLORS, getBeltForProfile, isIppan, needsIppanMigration } from '../lib/supabase'
 import { useLang } from '../lib/i18n'
 
 // --- アカウント設定モーダル（パスワード/メール変更） ---
@@ -184,8 +184,13 @@ export default function StudentDashboard({ profile, onReload, familyProfiles, on
         supabase.from('criteria').select('*').order('id'),
         supabase.from('evaluations').select('*, criteria(*)').eq('student_id', profile.id),
       ]);
-      const filtered = (allCriteria || []).filter((c: any) => normalizeKyu(c.dan) === currentKyu);
-      console.log('[StudentDashboard] currentKyu=', currentKyu, 'total criteria=', allCriteria?.length, 'matched=', filtered.length, 'sample dan values=', [...new Set((allCriteria || []).map((c: any) => c.dan))]);
+      const ippan = isIppan(profile);
+      const divisionFilter = ippan ? 'general' : 'junior';
+      const filtered = (allCriteria || []).filter((c: any) =>
+        normalizeKyu(c.dan) === currentKyu
+        && (c.division === 'both' || c.division === divisionFilter || !c.division)
+      );
+      console.log('[StudentDashboard] currentKyu=', currentKyu, 'ippan=', ippan, 'total criteria=', allCriteria?.length, 'matched=', filtered.length);
       setCurrentCriteria(filtered.map((c: any) => ({
         ...c,
         grade: scoresData?.find((s: any) => s.criterion_id === c.id)?.grade || null
