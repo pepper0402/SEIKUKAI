@@ -153,9 +153,13 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
 
   const allBranchList = useMemo(() => {
     // 支部長は自分の支部のみ。マスターは全支部（プリセット＋実データ）
+    // プリセット3支部は常に先頭・固定順（池田・川西・宝塚）、追加支部は後ろに50音順
     if (isBranchChief && adminBranch) return [adminBranch]
-    const branches = students.map(s => s.branch).filter(Boolean) as string[]
-    return Array.from(new Set(['池田', '川西', '宝塚', ...branches])).sort()
+    const CANONICAL = ['池田', '川西', '宝塚']
+    const dataBranches = students.map(s => s.branch).filter(Boolean) as string[]
+    const extras = Array.from(new Set(dataBranches.filter(b => !CANONICAL.includes(b))))
+      .sort((a, b) => a.localeCompare(b, 'ja'))
+    return [...CANONICAL, ...extras]
   }, [students, isBranchChief, adminBranch])
 
   const filteredStudents = useMemo(() => {
@@ -329,11 +333,12 @@ function AddStudentModal({ branches, lockedBranch, onClose, onAdded }: { branche
     name: '',
     login_email: '',
     kyu: '無級',
-    branch: lockedBranch || branches[0] || '',
+    branch: lockedBranch || '',
     birthday: '',
     joined_at: '',
     gakuinen: '',
   });
+  const [addingNewBranch, setAddingNewBranch] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
@@ -342,7 +347,11 @@ function AddStudentModal({ branches, lockedBranch, onClose, onAdded }: { branche
       return;
     }
     // 支部長は自分の支部以外には登録できない（サーバー側対策は将来のRLSで実施）
-    const branchToSave = lockedBranch || form.branch;
+    const branchToSave = (lockedBranch || form.branch).trim();
+    if (addingNewBranch && !branchToSave) {
+      alert('新しい支部名を入力してください。');
+      return;
+    }
     setSaving(true);
     const { data, error } = await supabase.from('profiles').insert({
       name: form.name.trim(),
@@ -396,14 +405,33 @@ function AddStudentModal({ branches, lockedBranch, onClose, onAdded }: { branche
               <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">
                 支部{lockedBranch ? '（自支部に固定）' : ''}
               </label>
-              <input type="text" value={form.branch}
-                onChange={e => !lockedBranch && setForm({ ...form, branch: e.target.value })}
+              <select
+                value={lockedBranch ? lockedBranch : (addingNewBranch ? '__new__' : form.branch)}
+                onChange={e => {
+                  if (lockedBranch) return;
+                  const v = e.target.value;
+                  if (v === '__new__') {
+                    setAddingNewBranch(true);
+                    setForm({ ...form, branch: '' });
+                  } else {
+                    setAddingNewBranch(false);
+                    setForm({ ...form, branch: v });
+                  }
+                }}
                 disabled={!!lockedBranch}
-                list="add-branch-list"
-                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f] disabled:bg-gray-50 disabled:text-gray-400" />
-              <datalist id="add-branch-list">
-                {branches.map(b => <option key={b} value={b} />)}
-              </datalist>
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f] disabled:bg-gray-50 disabled:text-gray-400"
+              >
+                {!lockedBranch && <option value="">選択してください</option>}
+                {branches.map(b => <option key={b} value={b}>{b}</option>)}
+                {!lockedBranch && <option value="__new__">＋ 新しい支部を追加...</option>}
+              </select>
+              {addingNewBranch && !lockedBranch && (
+                <input type="text" value={form.branch}
+                  onChange={e => setForm({ ...form, branch: e.target.value })}
+                  placeholder="新しい支部名を入力"
+                  autoFocus
+                  className="mt-2 w-full border border-orange-300 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-orange-500" />
+              )}
             </div>
           </div>
 
@@ -445,14 +473,15 @@ function AddStudentModal({ branches, lockedBranch, onClose, onAdded }: { branche
 }
 
 // --- 編集パネル ---
-function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; adminProfile: Profile; onClose: () => void; onSave: (updated: any) => void }) {
+function EditPanel({ student, adminProfile, branches, onClose, onSave }: { student: any; adminProfile: Profile; branches: string[]; onClose: () => void; onSave: (updated: any) => void }) {
   const adminRole = resolveRole(adminProfile);
   const isSelf = student.id === adminProfile.id;
   const canAssignRole = adminRole === 'master' && !isSelf;
+  const initialBranch = student.branch || '';
   const [form, setForm] = useState({
     name: student.name || '',
     kyu: normalizeKyu(student.kyu),
-    branch: student.branch || '',
+    branch: initialBranch,
     birthday: toDateInput(student.birthday),
     joined_at: toDateInput(student.joined_at),
     gakuinen: (student.gakuinen || '').trim(),
@@ -461,6 +490,10 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
     status: ((student.status as MemberStatus | undefined) || 'active') as MemberStatus,
     parent_login_email: (student.parent_login_email as string | null | undefined) || '',
   });
+  // 既存生徒の所属支部がプリセットに無い場合は最初から新規入力モードで開く
+  const [addingNewBranch, setAddingNewBranch] = useState(
+    !!initialBranch && !branches.includes(initialBranch)
+  );
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -566,13 +599,39 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
             <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">
               支部{adminRole === 'branch' ? '（支部長は変更不可）' : ''}
             </label>
-            <input
-              type="text"
-              value={form.branch}
-              onChange={e => setForm({ ...form, branch: e.target.value })}
+            <select
+              value={adminRole === 'branch' ? form.branch : (addingNewBranch ? '__new__' : form.branch)}
+              onChange={e => {
+                if (adminRole === 'branch') return;
+                const v = e.target.value;
+                if (v === '__new__') {
+                  setAddingNewBranch(true);
+                  setForm({ ...form, branch: '' });
+                } else {
+                  setAddingNewBranch(false);
+                  setForm({ ...form, branch: v });
+                }
+              }}
               disabled={adminRole === 'branch'}
               className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f] disabled:bg-gray-50 disabled:text-gray-400"
-            />
+            >
+              {adminRole !== 'branch' && <option value="">選択してください</option>}
+              {branches.map(b => <option key={b} value={b}>{b}</option>)}
+              {adminRole === 'branch' && form.branch && !branches.includes(form.branch) && (
+                <option value={form.branch}>{form.branch}</option>
+              )}
+              {adminRole !== 'branch' && <option value="__new__">＋ 新しい支部を追加...</option>}
+            </select>
+            {addingNewBranch && adminRole !== 'branch' && (
+              <input
+                type="text"
+                value={form.branch}
+                onChange={e => setForm({ ...form, branch: e.target.value })}
+                placeholder="新しい支部名を入力"
+                autoFocus
+                className="mt-2 w-full border border-orange-300 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-orange-500"
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1171,6 +1230,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
         <EditPanel
           student={student}
           adminProfile={adminProfile}
+          branches={allBranchList}
           onClose={() => setShowEdit(false)}
           onSave={handleEditSave}
         />
