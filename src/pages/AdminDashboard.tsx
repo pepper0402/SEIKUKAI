@@ -280,6 +280,29 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
     [students, attendingIds]
   )
 
+  // 並列モードで「今見てる1人」をタブで切替
+  const [activeAttendingId, setActiveAttendingId] = useState<string | null>(null)
+  useEffect(() => {
+    if (attendingStudents.length === 0) {
+      setActiveAttendingId(null)
+      return
+    }
+    // 現在の active が出席リストから外れたら先頭に切替
+    if (!activeAttendingId || !attendingStudents.some(s => s.id === activeAttendingId)) {
+      setActiveAttendingId(attendingStudents[0].id)
+    }
+  }, [attendingStudents, activeAttendingId])
+  const activeAttending = useMemo(
+    () => attendingStudents.find(s => s.id === activeAttendingId) || attendingStudents[0] || null,
+    [attendingStudents, activeAttendingId]
+  )
+  const goRelativeAttending = useCallback((delta: number) => {
+    if (attendingStudents.length === 0) return
+    const idx = Math.max(0, attendingStudents.findIndex(s => s.id === activeAttendingId))
+    const nextIdx = (idx + delta + attendingStudents.length) % attendingStudents.length
+    setActiveAttendingId(attendingStudents[nextIdx].id)
+  }, [attendingStudents, activeAttendingId])
+
   return (
     <div className="flex h-screen bg-[#f0f2f5] overflow-hidden font-sans text-[#001f3f]">
       {!isSidebarOpen && (
@@ -469,35 +492,97 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
 
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-10 pt-16 md:pt-10">
         {attendingStudents.length > 0 ? (
-          <div className="space-y-6 max-w-none">
-            <div className="max-w-5xl mx-auto flex items-center justify-between bg-white rounded-2xl shadow-sm border border-gray-100 px-5 py-4">
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">
-                  {t('今日の並列評価', 'Parallel Evaluation — Today')}
-                </p>
-                <p className="text-lg font-black text-[#001f3f]">
-                  {t(`${attendingStudents.length}名を採点中`, `${attendingStudents.length} members selected`)}
-                </p>
-              </div>
-              <button
-                onClick={clearAttending}
-                className="text-[10px] font-black bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">
-                {t('選択をクリア', 'Clear selection')}
-              </button>
-            </div>
-            <div className="space-y-8">
-              {attendingStudents.map(s => (
-                <div key={s.id} className="border-t-4 border-emerald-400/40 pt-4">
-                  <EvaluationPanel
-                    student={s}
-                    onRefresh={loadStudents}
-                    allBranchList={allBranchList}
-                    adminProfile={adminProfile}
-                    criteriaRefreshKey={criteriaVersion}
-                  />
+          <div className="max-w-2xl mx-auto">
+            {/* 並列モードのスティッキー・ヘッダー＆タブ */}
+            <div className="sticky top-0 z-20 -mx-4 md:-mx-10 px-4 md:px-10 pt-2 pb-3 bg-[#f8f9fa]/95 backdrop-blur-sm border-b border-gray-200 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="min-w-0">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">
+                    {t('今日の並列評価', 'Parallel Evaluation — Today')}
+                  </p>
+                  <p className="text-sm font-black text-[#001f3f] truncate">
+                    {activeAttending ? activeAttending.name : ''}
+                    <span className="text-[10px] font-black text-gray-400 ml-2">
+                      {attendingStudents.findIndex(s => s.id === activeAttending?.id) + 1} / {attendingStudents.length}
+                    </span>
+                  </p>
                 </div>
-              ))}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => goRelativeAttending(-1)}
+                    disabled={attendingStudents.length <= 1}
+                    title={t('前の生徒', 'Previous')}
+                    className="w-8 h-8 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 font-black text-[#001f3f] disabled:opacity-30 disabled:cursor-not-allowed">
+                    ←
+                  </button>
+                  <button
+                    onClick={() => goRelativeAttending(1)}
+                    disabled={attendingStudents.length <= 1}
+                    title={t('次の生徒', 'Next')}
+                    className="w-8 h-8 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 font-black text-[#001f3f] disabled:opacity-30 disabled:cursor-not-allowed">
+                    →
+                  </button>
+                  <button
+                    onClick={clearAttending}
+                    title={t('出席選択をすべてクリア', 'Clear all')}
+                    className="ml-2 text-[10px] font-black bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg">
+                    {t('クリア', 'Clear')}
+                  </button>
+                </div>
+              </div>
+
+              {/* タブ（横スクロール） */}
+              <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1">
+                {attendingStudents.map(s => {
+                  const belt = getBeltForProfile(s)
+                  const bc = BELT_COLORS[belt] || BELT_COLORS['白帯']
+                  const isActive = s.id === activeAttending?.id
+                  return (
+                    <div key={s.id} className="shrink-0 relative group">
+                      <button
+                        onClick={() => setActiveAttendingId(s.id)}
+                        className="flex items-center gap-2 pl-3 pr-7 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all border-2"
+                        style={isActive
+                          ? { backgroundColor: bc.bg, color: bc.text, borderColor: bc.bg }
+                          : { backgroundColor: '#ffffff', color: '#64748b', borderColor: '#e2e8f0' }}>
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: isActive ? bc.text : bc.bg, opacity: isActive ? 0.8 : 1 }} />
+                        <span className="truncate max-w-[7rem]">{s.name}</span>
+                        <span
+                          className="text-[9px] font-black px-1.5 py-0.5 rounded"
+                          style={{
+                            backgroundColor: isActive ? 'rgba(0,0,0,0.18)' : '#f1f5f9',
+                            color: isActive ? bc.text : '#94a3b8',
+                          }}>
+                          {normalizeKyu(s.kyu)}
+                        </span>
+                      </button>
+                      {/* 出席から外す × ボタン */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleAttending(s.id); }}
+                        title={t('出席から外す', 'Remove from attendance')}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black hover:bg-black/20 leading-none"
+                        style={{ color: isActive ? bc.text : '#94a3b8' }}>
+                        ×
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
+
+            {/* 選択中の1名のみEvaluationPanelを表示 */}
+            {activeAttending && (
+              <EvaluationPanel
+                key={activeAttending.id}
+                student={activeAttending}
+                onRefresh={loadStudents}
+                allBranchList={allBranchList}
+                adminProfile={adminProfile}
+                criteriaRefreshKey={criteriaVersion}
+              />
+            )}
           </div>
         ) : selectedStudent ? (
           <EvaluationPanel key={selectedStudent.id} student={selectedStudent} onRefresh={loadStudents} allBranchList={allBranchList} adminProfile={adminProfile} criteriaRefreshKey={criteriaVersion} />
