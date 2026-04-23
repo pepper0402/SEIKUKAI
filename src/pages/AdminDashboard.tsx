@@ -1285,7 +1285,16 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const rawCurrentMax = currentGradeEvals.length * 10;
   const currentGradeScore = rawCurrentMax > 0 ? Math.round((rawCurrentScore / rawCurrentMax) * 100) : 0;
   const currentGradeMax = currentGradeEvals.length > 0 ? 100 : 0;
-  const isEligible = currentGradeEvals.length > 0 && currentGradeScore >= 80;
+  // 必須科目(is_required=true)は A または B で合格。ひとつでもC/Dなら昇級不可。
+  const unmetRequired = useMemo(
+    () => currentGradeEvals.filter((c: any) =>
+      c.is_required && c.grade !== 'A' && c.grade !== 'B'
+    ),
+    [currentGradeEvals]
+  );
+  const allRequiredPassed = unmetRequired.length === 0;
+  const scorePassed = currentGradeScore >= 80;
+  const isEligible = currentGradeEvals.length > 0 && scorePassed && allRequiredPassed;
 
   const groupedCriteria: [string, any[]][] = useMemo(() => {
     const groups: Record<string, any[]> = {};
@@ -1299,7 +1308,17 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
 
   const handlePromote = async (step: number = 1) => {
     if (!isEligible) {
-      alert(`受験可ライン（80点）に達していません。\n現在の点数：${currentGradeScore}点 / ${currentGradeMax}点`);
+      const reasons: string[] = [];
+      if (!scorePassed) {
+        reasons.push(`・受験可ライン（80点）に達していません。現在：${currentGradeScore}点 / ${currentGradeMax}点`);
+      }
+      if (!allRequiredPassed) {
+        const names = unmetRequired
+          .map((c: any) => `${c.examination_type} / ${c.examination_content}`)
+          .join('\n    - ');
+        reasons.push(`・必須科目でA/B未達のものがあります（${unmetRequired.length}件）：\n    - ${names}`);
+      }
+      alert(`昇級できません。\n\n${reasons.join('\n\n')}`);
       return;
     }
     const currentIdx = allKyuList.indexOf(currentKyu);
@@ -1454,12 +1473,40 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
                 <p className="text-[9px] font-black text-green-400 uppercase tracking-wide leading-none">受験可</p>
               </div>
             ) : (
-              <div className="text-right opacity-40">
-                <p className="text-[7px] font-black uppercase tracking-widest">あと</p>
-                <p className="text-xl font-black leading-none">{Math.max(0, 80 - currentGradeScore)}<span className="text-[9px] ml-0.5">点</span></p>
+              <div className="text-right opacity-60">
+                {!scorePassed && (
+                  <>
+                    <p className="text-[7px] font-black uppercase tracking-widest">あと</p>
+                    <p className="text-xl font-black leading-none">{Math.max(0, 80 - currentGradeScore)}<span className="text-[9px] ml-0.5">点</span></p>
+                  </>
+                )}
+                {scorePassed && !allRequiredPassed && (
+                  <>
+                    <p className="text-[7px] font-black uppercase tracking-widest">必須未達</p>
+                    <p className="text-xl font-black leading-none">{unmetRequired.length}<span className="text-[9px] ml-0.5">件</span></p>
+                  </>
+                )}
               </div>
             )}
           </div>
+
+          {/* 必須未達ブロック: 80点到達後も必須がC/Dなら昇級不可なので、何が足りないか明示 */}
+          {currentGradeEvals.length > 0 && !allRequiredPassed && (
+            <div className="mb-3 px-3 py-2 rounded-xl" style={{ backgroundColor: 'rgba(0,0,0,0.22)' }}>
+              <p className="text-[9px] font-black uppercase tracking-wider opacity-70 mb-1">★ 必須未達 ({unmetRequired.length}件)</p>
+              <div className="space-y-0.5">
+                {unmetRequired.slice(0, 3).map((c: any) => (
+                  <p key={c.id} className="text-[10px] font-bold leading-snug opacity-90">
+                    <span className="opacity-60">{c.examination_type}</span> — {c.examination_content}
+                    <span className="ml-1.5 text-[9px] opacity-60">({c.grade})</span>
+                  </p>
+                ))}
+                {unmetRequired.length > 3 && (
+                  <p className="text-[9px] font-black opacity-50">…ほか {unmetRequired.length - 3} 件</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* プログレスバー */}
           <div className="mb-4">
