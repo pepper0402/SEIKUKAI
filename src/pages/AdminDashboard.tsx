@@ -485,16 +485,17 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
                 {t('選択をクリア', 'Clear selection')}
               </button>
             </div>
-            <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-3">
+            <div className="space-y-8">
               {attendingStudents.map(s => (
-                <EvaluationPanel
-                  key={s.id}
-                  student={s}
-                  onRefresh={loadStudents}
-                  allBranchList={allBranchList}
-                  adminProfile={adminProfile}
-                  criteriaRefreshKey={criteriaVersion}
-                />
+                <div key={s.id} className="border-t-4 border-emerald-400/40 pt-4">
+                  <EvaluationPanel
+                    student={s}
+                    onRefresh={loadStudents}
+                    allBranchList={allBranchList}
+                    adminProfile={adminProfile}
+                    criteriaRefreshKey={criteriaVersion}
+                  />
+                </div>
               ))}
             </div>
           </div>
