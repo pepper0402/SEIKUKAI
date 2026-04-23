@@ -52,6 +52,32 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
   // { name, is_canonical } のペアで保持。is_canonical=TRUE は正式3支部（池田/川西/宝塚）で削除UI保護。
   const [branchMaster, setBranchMaster] = useState<{ name: string; is_canonical: boolean }[]>([])
 
+  // ===== 出席モード（今日来てる子を選択して並列評価） =====
+  // 日付キー（YYYY-MM-DD）ごとにlocalStorageへ保存。日付が変われば自動リセット。
+  const attendanceKey = `seikukai:attendance:${new Date().toISOString().slice(0, 10)}`
+  const [attendingIds, setAttendingIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(attendanceKey)
+      return new Set<string>(raw ? JSON.parse(raw) : [])
+    } catch { return new Set<string>() }
+  })
+  const persistAttending = useCallback((next: Set<string>) => {
+    try { localStorage.setItem(attendanceKey, JSON.stringify([...next])) } catch {}
+  }, [attendanceKey])
+  const toggleAttending = useCallback((id: string) => {
+    setAttendingIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      persistAttending(next)
+      return next
+    })
+  }, [persistAttending])
+  const clearAttending = useCallback(() => {
+    const empty = new Set<string>()
+    setAttendingIds(empty)
+    persistAttending(empty)
+  }, [persistAttending])
+
   const canDeleteAll = isMaster
   const canBulkImportStudents = isMaster
   // 生徒追加はマスター・支部長のみ（指導員は評価のみ）
@@ -248,6 +274,12 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
     return result.sort((a, b) => sortBy === 'kyu' ? allKyuList.indexOf(normalizeKyu(b.kyu)) - allKyuList.indexOf(normalizeKyu(a.kyu)) : (a.name || '').localeCompare(b.name || '', 'ja'));
   }, [students, searchQuery, branchFilter, sortBy])
 
+  // 出席中の生徒を並列表示の順序（ロード済みリスト順）で解決
+  const attendingStudents = useMemo(
+    () => students.filter(s => attendingIds.has(s.id)),
+    [students, attendingIds]
+  )
+
   return (
     <div className="flex h-screen bg-[#f0f2f5] overflow-hidden font-sans text-[#001f3f]">
       {!isSidebarOpen && (
@@ -371,6 +403,18 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
                 className="accent-orange-500" />
               <span className="opacity-80">{t('休会・退会者も表示', 'Include paused / resigned')}</span>
             </label>
+            {attendingIds.size > 0 && (
+              <div className="mt-1 p-2 bg-emerald-500/15 border border-emerald-400/30 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black text-emerald-300">
+                    {t(`出席中: ${attendingIds.size}名`, `Attending: ${attendingIds.size}`)}
+                  </span>
+                  <button onClick={clearAttending} className="text-[9px] font-black text-emerald-200 hover:text-white underline">
+                    {t('クリア', 'Clear')}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
@@ -380,11 +424,24 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
             const unmigrated = needsIppanMigration(s);
             const status = (s.status as MemberStatus | undefined) || 'active';
             const isInactive = status !== 'active';
+            const isAttending = attendingIds.has(s.id);
             return (
               <div key={s.id} onClick={() => {setSelectedStudentId(s.id); if(window.innerWidth<768)setIsSidebarOpen(false);}}
-                className={`p-5 border-l-4 cursor-pointer transition-all ${selectedStudentId === s.id ? 'bg-orange-50 border-orange-500 shadow-inner' : 'border-transparent hover:bg-gray-50'} ${isInactive ? 'opacity-50' : ''}`}>
-                <div className="flex justify-between items-center">
-                  <div>
+                className={`p-5 border-l-4 cursor-pointer transition-all ${selectedStudentId === s.id ? 'bg-orange-50 border-orange-500 shadow-inner' : isAttending ? 'bg-emerald-50/60 border-emerald-400' : 'border-transparent hover:bg-gray-50'} ${isInactive ? 'opacity-50' : ''}`}>
+                <div className="flex justify-between items-center gap-3">
+                  {/* 出席チェック（クリックはカード選択に伝播させない） */}
+                  <label
+                    onClick={e => e.stopPropagation()}
+                    className="flex items-center justify-center w-6 h-6 rounded-md cursor-pointer bg-white border border-gray-200 hover:border-emerald-400 shrink-0"
+                    title={t('今日の出席にチェック', 'Mark attending today')}>
+                    <input
+                      type="checkbox"
+                      checked={isAttending}
+                      onChange={() => toggleAttending(s.id)}
+                      className="w-4 h-4 accent-emerald-500 cursor-pointer"
+                    />
+                  </label>
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                       <p className="font-black text-sm">{s.name}</p>
                       {isStaff && (
@@ -411,7 +468,37 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
       </div>
 
       <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-10 pt-16 md:pt-10">
-        {selectedStudent ? (
+        {attendingStudents.length > 0 ? (
+          <div className="space-y-6 max-w-none">
+            <div className="max-w-5xl mx-auto flex items-center justify-between bg-white rounded-2xl shadow-sm border border-gray-100 px-5 py-4">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">
+                  {t('今日の並列評価', 'Parallel Evaluation — Today')}
+                </p>
+                <p className="text-lg font-black text-[#001f3f]">
+                  {t(`${attendingStudents.length}名を採点中`, `${attendingStudents.length} members selected`)}
+                </p>
+              </div>
+              <button
+                onClick={clearAttending}
+                className="text-[10px] font-black bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">
+                {t('選択をクリア', 'Clear selection')}
+              </button>
+            </div>
+            <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-3">
+              {attendingStudents.map(s => (
+                <EvaluationPanel
+                  key={s.id}
+                  student={s}
+                  onRefresh={loadStudents}
+                  allBranchList={allBranchList}
+                  adminProfile={adminProfile}
+                  criteriaRefreshKey={criteriaVersion}
+                />
+              ))}
+            </div>
+          </div>
+        ) : selectedStudent ? (
           <EvaluationPanel key={selectedStudent.id} student={selectedStudent} onRefresh={loadStudents} allBranchList={allBranchList} adminProfile={adminProfile} criteriaRefreshKey={criteriaVersion} />
         ) : (
           <div className="h-full flex flex-col items-center justify-center opacity-20 grayscale">
