@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, APP_URL } from '../lib/supabase'
 
 export default function LoginPage({ admin }: { admin?: boolean }) {
   const [email, setEmail] = useState('')
@@ -42,7 +42,7 @@ export default function LoginPage({ admin }: { admin?: boolean }) {
     setResetting(true);
     setErrorMsg(null);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/`,
+      redirectTo: `${APP_URL}/`,
     });
     setResetting(false);
     if (error) setErrorMsg('リセットメール送信に失敗しました: ' + error.message);

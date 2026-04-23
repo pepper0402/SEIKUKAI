@@ -5,7 +5,24 @@ const key = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(url, key)
 
+/**
+ * 本番アプリのURL。パスワードリセット等の redirectTo に使用。
+ * VITE_APP_URL（環境変数）が設定されていればそれを使用、
+ * なければ window.location.origin にフォールバック。
+ * 本番・プレビュー・localhost 混在時のリセットリンク誤送を防ぐ。
+ */
+export const APP_URL = import.meta.env.VITE_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://seikukai.vercel.app')
+
 export type Role = 'master' | 'branch' | 'instructor' | 'student'
+
+/** 会員籍ステータス */
+export type MemberStatus = 'active' | 'paused' | 'resigned'
+
+export const MEMBER_STATUS_LABEL: Record<MemberStatus, string> = {
+  active:   '在籍中',
+  paused:   '休会中',
+  resigned: '退会済',
+}
 
 export type Profile = {
   id: string
@@ -23,6 +40,10 @@ export type Profile = {
   branch: string
   /** 高校進学済だが一般ランクへ未移行の場合 TRUE。少年部ランクを保持し表示も少年部色＋「未移行」バッジ */
   keeps_junior_rank?: boolean
+  /** 会員ステータス。default 'active'。退会者を一覧から隠す等に使用 */
+  status?: MemberStatus
+  /** 保護者のログイン用メール（家族アカウント運用）。親が子profileをこのフィールドで紐付け */
+  parent_login_email?: string | null
 }
 
 export type Criterion = {
@@ -208,6 +229,34 @@ export const isValidVideoUrl = (url: string | null | undefined): url is string =
   if (!url) return false
   const s = String(url).trim()
   return s.startsWith('http://') || s.startsWith('https://')
+}
+
+/**
+ * 監査ログ記録ヘルパー。actor が target に対して action を実施したことを audit_log に記録。
+ * before/after は差分。エラーは silent に console 出力（ログ記録失敗で本処理を止めない）
+ */
+export const logAudit = async (params: {
+  actorEmail: string | null | undefined
+  action: string
+  targetId?: string | null
+  targetTable?: string | null
+  before?: any
+  after?: any
+  note?: string
+}): Promise<void> => {
+  try {
+    await supabase.from('audit_log').insert({
+      actor_email: params.actorEmail || null,
+      action: params.action,
+      target_id: params.targetId || null,
+      target_table: params.targetTable || null,
+      before_data: params.before ? JSON.stringify(params.before) : null,
+      after_data: params.after ? JSON.stringify(params.after) : null,
+      note: params.note || null,
+    })
+  } catch (e) {
+    console.warn('[logAudit] failed:', e)
+  }
 }
 
 /** '正10級' / '10' / '準4' などを '10級' / '準4級' に正規化（段はそのまま） */

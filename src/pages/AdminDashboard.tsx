@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import {
-  supabase, Profile, Role,
+  supabase, Profile, Role, MemberStatus, MEMBER_STATUS_LABEL, APP_URL,
   resolveRole, canCertifyDan, canCertifyKyu, canScore, getRoleLabel,
-  KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu, isValidVideoUrl,
+  KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu, isValidVideoUrl, logAudit,
   BELT_COLORS, BELT_GRADE_MAP, getBeltCategoryForGrade, getBeltForProfile, needsIppanMigration,
 } from '../lib/supabase'
 import StudentDashboard from './StudentDashboard'
@@ -41,6 +41,8 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
   const [showAddStudent, setShowAddStudent] = useState(false)
   // マスターのみ: スタッフ（管理者アカウント）を一覧に含めるトグル
   const [includeStaff, setIncludeStaff] = useState(false)
+  // 退会・休会も一覧に含めるトグル
+  const [includeInactive, setIncludeInactive] = useState(false)
 
   const canDeleteAll = isMaster
   const canBulkImportStudents = isMaster
@@ -56,8 +58,14 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
       query = query.eq('branch', adminBranch)
     }
     const { data } = await query
-    if (data) setStudents(data);
-  }, [isMaster, isBranchChief, adminBranch, includeStaff])
+    if (data) {
+      // status でのフィルタ（null は active 扱い）
+      const filtered = includeInactive
+        ? data
+        : data.filter((p: any) => !p.status || p.status === 'active')
+      setStudents(filtered);
+    }
+  }, [isMaster, isBranchChief, adminBranch, includeStaff, includeInactive])
 
   useEffect(() => {
     loadStudents()
@@ -238,6 +246,11 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
                 <span className="opacity-80">スタッフ（支部長・指導員）も表示</span>
               </label>
             )}
+            <label className="flex items-center gap-2 px-2 py-1.5 bg-white/5 rounded-lg text-[9px] font-black cursor-pointer select-none">
+              <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)}
+                className="accent-orange-500" />
+              <span className="opacity-80">休会・退会者も表示</span>
+            </label>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
@@ -245,8 +258,11 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
             const sRole = resolveRole(s);
             const isStaff = sRole !== 'student';
             const unmigrated = needsIppanMigration(s);
+            const status = (s.status as MemberStatus | undefined) || 'active';
+            const isInactive = status !== 'active';
             return (
-              <div key={s.id} onClick={() => {setSelectedStudentId(s.id); if(window.innerWidth<768)setIsSidebarOpen(false);}} className={`p-5 border-l-4 cursor-pointer transition-all ${selectedStudentId === s.id ? 'bg-orange-50 border-orange-500 shadow-inner' : 'border-transparent hover:bg-gray-50'}`}>
+              <div key={s.id} onClick={() => {setSelectedStudentId(s.id); if(window.innerWidth<768)setIsSidebarOpen(false);}}
+                className={`p-5 border-l-4 cursor-pointer transition-all ${selectedStudentId === s.id ? 'bg-orange-50 border-orange-500 shadow-inner' : 'border-transparent hover:bg-gray-50'} ${isInactive ? 'opacity-50' : ''}`}>
                 <div className="flex justify-between items-center">
                   <div>
                     <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
@@ -256,6 +272,12 @@ export default function AdminDashboard({ profile: adminProfile, onReload }: { pr
                       )}
                       {unmigrated && (
                         <span className="text-[7px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-black" title="高校進学済・一般ランクへ未移行">⚠ 未移行</span>
+                      )}
+                      {status === 'paused' && (
+                        <span className="text-[7px] bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded font-black">休会中</span>
+                      )}
+                      {status === 'resigned' && (
+                        <span className="text-[7px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black">退会済</span>
                       )}
                     </div>
                     <p className="text-[9px] font-bold text-orange-500 uppercase">{normalizeKyu(s.kyu)}</p>
@@ -436,6 +458,8 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
     gakuinen: (student.gakuinen || '').trim(),
     role: (resolveRole(student) as Role),
     keeps_junior_rank: !!student.keeps_junior_rank,
+    status: ((student.status as MemberStatus | undefined) || 'active') as MemberStatus,
+    parent_login_email: (student.parent_login_email as string | null | undefined) || '',
   });
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -448,7 +472,7 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
     if (!confirm(`${student.login_email} にパスワードリセット用のメールを送信します。よろしいですか？`)) return;
     setResetting(true);
     const { error } = await supabase.auth.resetPasswordForEmail(student.login_email, {
-      redirectTo: `${window.location.origin}/`,
+      redirectTo: `${APP_URL}/`,
     });
     setResetting(false);
     if (error) alert('送信に失敗しました: ' + error.message);
@@ -474,6 +498,8 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
       joined_at: form.joined_at || null,
       gakuinen: form.gakuinen,
       keeps_junior_rank: form.keeps_junior_rank,
+      status: form.status,
+      parent_login_email: form.parent_login_email.trim().toLowerCase() || null,
     };
     // マスターのみ role / is_admin を更新可能（自分自身は除く）
     if (canAssignRole) {
@@ -482,8 +508,25 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
     }
     const { error } = await supabase.from('profiles').update(updatePayload).eq('id', student.id);
     setSaving(false);
-    if (!error) onSave({ ...student, ...form, is_admin: canAssignRole ? form.role !== 'student' : student.is_admin });
-    else alert('保存に失敗しました: ' + error.message);
+    if (!error) {
+      logAudit({
+        actorEmail: adminProfile.login_email,
+        action: 'edit_profile',
+        targetId: student.id,
+        targetTable: 'profiles',
+        before: {
+          name: student.name, kyu: student.kyu, branch: student.branch,
+          role: resolveRole(student), status: student.status,
+          keeps_junior_rank: !!student.keeps_junior_rank,
+        },
+        after: {
+          name: form.name, kyu: form.kyu, branch: form.branch,
+          role: canAssignRole ? form.role : resolveRole(student),
+          status: form.status, keeps_junior_rank: form.keeps_junior_rank,
+        },
+      });
+      onSave({ ...student, ...form, is_admin: canAssignRole ? form.role !== 'student' : student.is_admin });
+    } else alert('保存に失敗しました: ' + error.message);
   };
 
   return (
@@ -579,6 +622,43 @@ function EditPanel({ student, adminProfile, onClose, onSave }: { student: any; a
             </div>
           </label>
 
+          {/* 会員ステータス */}
+          <div>
+            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">
+              会員ステータス
+            </label>
+            <select
+              value={form.status}
+              onChange={e => setForm({ ...form, status: e.target.value as MemberStatus })}
+              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]"
+            >
+              <option value="active">{MEMBER_STATUS_LABEL.active}</option>
+              <option value="paused">{MEMBER_STATUS_LABEL.paused}</option>
+              <option value="resigned">{MEMBER_STATUS_LABEL.resigned}</option>
+            </select>
+            {form.status !== 'active' && (
+              <p className="text-[10px] text-gray-500 mt-1 font-bold leading-snug">
+                一覧からは標準で非表示になります（「休会・退会者も表示」トグルで表示可）。
+              </p>
+            )}
+          </div>
+
+          {/* 保護者メール（家族運用） */}
+          <div>
+            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">
+              保護者のログインメール（任意）
+            </label>
+            <input type="email"
+              value={form.parent_login_email}
+              onChange={e => setForm({ ...form, parent_login_email: e.target.value })}
+              placeholder="親のhacomono登録メール"
+              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+            <p className="text-[10px] text-gray-500 mt-1 font-bold leading-snug">
+              この会員が「保護者が親メールでログインして管理する子ども」の場合、親のメールを入力。<br />
+              入力されていれば、親がログインしたときにこの会員profileへ切替可能になります。
+            </p>
+          </div>
+
         </div>
 
         {/* 権限設定（マスター限定） */}
@@ -652,6 +732,8 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const [currentGradeEvals, setCurrentGradeEvals] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [student, setStudent] = useState(initialStudent);
+  const [recentPromotion, setRecentPromotion] = useState<any | null>(null);
+  const [reversing, setReversing] = useState(false);
 
   const currentKyu = normalizeKyu(student.kyu);
   // 生徒表示用（年齢込みの帯名・色）
@@ -688,6 +770,27 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
     }
     fetchEvals()
   }, [student.id, viewGrade, criteriaRefreshKey])
+
+  // 直近の昇級履歴（未取消のみ）を取得。24時間以内の最新1件
+  useEffect(() => {
+    async function fetchRecentPromotion() {
+      const { data } = await supabase.from('promotion_history')
+        .select('*')
+        .eq('student_id', student.id)
+        .order('promoted_at', { ascending: false })
+        .limit(1);
+      const latest = data?.[0];
+      if (!latest || latest.is_reversed) {
+        setRecentPromotion(null);
+        return;
+      }
+      const promotedAt = new Date(latest.promoted_at);
+      const hoursAgo = (Date.now() - promotedAt.getTime()) / 3600000;
+      // 24時間以内なら取消可能とする
+      setRecentPromotion(hoursAgo <= 24 ? latest : null);
+    }
+    fetchRecentPromotion();
+  }, [student.id, student.kyu]);
 
   // 現在の級スコア（昇級判定専用）― viewGradeに関わらず常にcurrentKyuで計算
   useEffect(() => {
@@ -755,9 +858,54 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
       });
     }
 
+    logAudit({
+      actorEmail: adminProfile.login_email,
+      action: 'promote',
+      targetId: student.id,
+      targetTable: 'profiles',
+      before: { kyu: currentKyu },
+      after: { kyu: nextKyu },
+      note: `score=${currentGradeScore}, step=${step}`,
+    });
+
     setStudent({ ...student, kyu: nextKyu });
     onRefresh();
     alert(`${nextKyu}への昇級を確定しました。`);
+  };
+
+  const handleReversePromotion = async () => {
+    if (!recentPromotion) return;
+    const msg = `${recentPromotion.to_kyu} → ${recentPromotion.from_kyu} に昇級を取り消します。\n\n` +
+                `（誤操作時のリバース用です。通知メールは送信済みのため会員への連絡は別途必要です）\n\n実行しますか？`;
+    if (!window.confirm(msg)) return;
+    setReversing(true);
+    // profiles.kyu を元に戻す
+    const { error: profErr } = await supabase.from('profiles')
+      .update({ kyu: recentPromotion.from_kyu })
+      .eq('id', student.id);
+    if (profErr) {
+      setReversing(false);
+      alert('取消に失敗しました: ' + profErr.message);
+      return;
+    }
+    // promotion_history に reversed フラグ
+    await supabase.from('promotion_history')
+      .update({ is_reversed: true, reversed_at: new Date().toISOString() })
+      .eq('id', recentPromotion.id);
+    logAudit({
+      actorEmail: adminProfile.login_email,
+      action: 'reverse_promotion',
+      targetId: student.id,
+      targetTable: 'profiles',
+      before: { kyu: recentPromotion.to_kyu },
+      after: { kyu: recentPromotion.from_kyu },
+      note: `reversed promotion_history.id=${recentPromotion.id}`,
+    });
+    setStudent({ ...student, kyu: recentPromotion.from_kyu });
+    setRecentPromotion(null);
+    setReversing(false);
+    onRefresh();
+    alert(`昇級を取消しました（${recentPromotion.from_kyu} に戻しました）`);
   };
 
   const handleEditSave = (updated: any) => {
@@ -877,6 +1025,25 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
           )}
           {!showAnyPromotion && !canEdit && (
             <p className="text-center text-[9px] font-black uppercase tracking-widest opacity-25">採点モード</p>
+          )}
+
+          {/* 昇級Undo（直近24時間以内） */}
+          {recentPromotion && canEdit && (
+            <div className="mt-2 p-2 rounded-xl border border-white/30 bg-white/10 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[8px] font-black opacity-60 uppercase tracking-wider">直近の昇級</p>
+                <p className="text-[10px] font-black truncate">
+                  {recentPromotion.from_kyu} → {recentPromotion.to_kyu}
+                  <span className="opacity-60 ml-1 font-normal">
+                    ({new Date(recentPromotion.promoted_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })})
+                  </span>
+                </p>
+              </div>
+              <button onClick={handleReversePromotion} disabled={reversing}
+                className="shrink-0 text-[9px] font-black px-2.5 py-1.5 rounded-lg bg-red-600 text-white disabled:opacity-50">
+                {reversing ? '取消中...' : '取消'}
+              </button>
+            </div>
           )}
         </div>
       </div>

@@ -6,10 +6,12 @@ import StudentDashboard from './pages/StudentDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 
 const ADMIN_MODE_STORAGE_KEY = 'seikukai.isAdminMode'
+const SELECTED_PROFILE_STORAGE_KEY = 'seikukai.selectedProfileId'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [familyProfiles, setFamilyProfiles] = useState<Profile[]>([])
   const [ready, setReady]     = useState(false)
 
   // 初期値: URLクエリ > localStorage（明示的に保存された選択） > false
@@ -36,9 +38,11 @@ export default function App() {
         loadProfile(s.user.email)
       } else {
         setProfile(null)
+        setFamilyProfiles([])
         setReady(true)
         // サインアウト時は localStorage を削除。次ユーザーの profile.is_admin で再判定させる
         localStorage.removeItem(ADMIN_MODE_STORAGE_KEY)
+        localStorage.removeItem(SELECTED_PROFILE_STORAGE_KEY)
         setIsAdminMode(false)
       }
     })
@@ -66,33 +70,44 @@ export default function App() {
     }
   }, [profile])
 
-  // 大小文字やトリム差で profile が引けない事故を避けるため多段フォールバック
+  // 家族運用対応: login_email OR parent_login_email に一致する全プロファイル取得
+  // 複数あればlocalStorage保存の選択 or 先頭を current に
   const loadProfile = async (email: string) => {
-    const trimmed = email.trim()
-    const lower = trimmed.toLowerCase()
+    const lower = email.trim().toLowerCase()
 
-    // 1. そのまま exact
-    let r = await supabase.from('profiles').select('*').eq('login_email', trimmed).maybeSingle()
-    if (r.error) console.warn('[loadProfile] exact error:', r.error.message)
+    // login_email または parent_login_email で一致するプロファイルを全件
+    const { data: rows, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .or(`login_email.ilike.${lower},parent_login_email.ilike.${lower}`)
 
-    // 2. 小文字
-    if (!r.data && lower !== trimmed) {
-      r = await supabase.from('profiles').select('*').eq('login_email', lower).maybeSingle()
-      if (r.error) console.warn('[loadProfile] lower error:', r.error.message)
-    }
+    if (error) console.warn('[loadProfile] query error:', error.message)
 
-    // 3. ilike（case-insensitive 完全一致）※%と_をエスケープ
-    if (!r.data) {
-      const safe = trimmed.replace(/([\\%_])/g, '\\$1')
-      r = await supabase.from('profiles').select('*').ilike('login_email', safe).maybeSingle()
-      if (r.error) console.warn('[loadProfile] ilike error:', r.error.message)
-    }
+    const list = (rows as Profile[] | null) ?? []
+    setFamilyProfiles(list)
 
-    if (!r.data) {
+    if (list.length === 0) {
       console.error('[loadProfile] no profile matched for email:', email)
+      setProfile(null)
+      setReady(true)
+      return
     }
-    setProfile((r.data as Profile | null) ?? null)
+
+    // 前回選択したプロファイルIDがあればそれを。無ければ自分のlogin_email一致を優先、それもなければ先頭
+    const savedId = localStorage.getItem(SELECTED_PROFILE_STORAGE_KEY)
+    let selected = list.find(p => p.id === savedId)
+    if (!selected) {
+      selected = list.find(p => (p.login_email || '').toLowerCase() === lower) || list[0]
+    }
+    setProfile(selected)
     setReady(true)
+  }
+
+  const switchProfile = (id: string) => {
+    const target = familyProfiles.find(p => p.id === id)
+    if (!target) return
+    localStorage.setItem(SELECTED_PROFILE_STORAGE_KEY, id)
+    setProfile(target)
   }
 
   // モード切り替え（トグルボタンからの明示的な操作）
@@ -152,6 +167,13 @@ export default function App() {
     return <AdminDashboard profile={profile} onReload={() => session?.user?.email && loadProfile(session.user.email)} />
   }
 
-  // 生徒モードでの表示
-  return <StudentDashboard profile={profile} onReload={() => session?.user?.email && loadProfile(session.user.email)} />
+  // 生徒モードでの表示（家族複数人の場合は切替UIを渡す）
+  return (
+    <StudentDashboard
+      profile={profile}
+      onReload={() => session?.user?.email && loadProfile(session.user.email)}
+      familyProfiles={familyProfiles.length > 1 ? familyProfiles : undefined}
+      onSwitchProfile={familyProfiles.length > 1 ? switchProfile : undefined}
+    />
+  )
 }
