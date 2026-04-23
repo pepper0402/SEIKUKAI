@@ -900,6 +900,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   adminProfile: Profile;
   criteriaRefreshKey: number;
 }) {
+  const { t } = useLang();
   const adminRole = resolveRole(adminProfile);
   const [showEdit, setShowEdit] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
