@@ -49,6 +49,8 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
 
   const canDeleteAll = isMaster
   const canBulkImportStudents = isMaster
+  // 生徒追加はマスター・支部長のみ（指導員は評価のみ）
+  const canAddStudent = isMaster || isBranchChief
 
   const loadStudents = useCallback(async () => {
     let query = supabase.from('profiles').select('*')
@@ -209,10 +211,12 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
               <button onClick={() => handleCsvImport('criteria')} className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black border border-white/10">審査CSV読込</button>
             </div>
           )}
-          <button onClick={() => setShowAddStudent(true)}
-            className="w-full py-2 bg-orange-500 hover:bg-orange-600 rounded-lg text-[10px] font-black border border-orange-400 mb-2">
-            ＋ {isBranchScoped && adminBranch ? `${adminBranch}支部の` : ''}生徒を追加
-          </button>
+          {canAddStudent && (
+            <button onClick={() => setShowAddStudent(true)}
+              className="w-full py-2 bg-orange-500 hover:bg-orange-600 rounded-lg text-[10px] font-black border border-orange-400 mb-2">
+              ＋ {isBranchChief && adminBranch ? `${adminBranch}支部の` : ''}生徒を追加
+            </button>
+          )}
           {canDeleteAll && (
             <div className="flex gap-2 mb-4">
               <button onClick={async () => {
