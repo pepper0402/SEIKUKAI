@@ -4,6 +4,7 @@ import {
   resolveRole, canCertifyDan, canCertifyKyu, canScore, getRoleLabel,
   KYU_OPTIONS, KYU_GRADES, GAKUINEN_OPTIONS, normalizeKyu, isValidVideoUrl, logAudit,
   BELT_COLORS, BELT_GRADE_MAP, getBeltCategoryForGrade, getBeltForProfile, isIppan, needsIppanMigration,
+  APPLY_SCORE, PASS_SCORE,
 } from '../lib/supabase'
 import { useLang, LangToggle } from '../lib/i18n'
 import StudentDashboard from './StudentDashboard'
@@ -1293,8 +1294,17 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
     [currentGradeEvals]
   );
   const allRequiredPassed = unmetRequired.length === 0;
-  const scorePassed = currentGradeScore >= 80;
-  const isEligible = currentGradeEvals.length > 0 && scorePassed && allRequiredPassed;
+  const hasEvals = currentGradeEvals.length > 0;
+
+  // 3段階レディネス:
+  //   practicing (0-59点)      → まだ練習段階
+  //   canApply   (60-79点)     → 審査申込み可・合格ボーダー
+  //   confidentPass (80+点)    → 合格圏
+  //   いずれも必須科目A/Bクリアが前提（未達ならすべて false 扱い）
+  const canApply = hasEvals && currentGradeScore >= APPLY_SCORE && allRequiredPassed;
+  const confidentPass = hasEvals && currentGradeScore >= PASS_SCORE && allRequiredPassed;
+  // 従来の isEligible = 昇級確定ボタンを押せる条件。60点以上＋必須クリアで押せる（ボーダーも押下可）
+  const isEligible = canApply;
 
   const groupedCriteria: [string, any[]][] = useMemo(() => {
     const groups: Record<string, any[]> = {};
@@ -1309,8 +1319,8 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const handlePromote = async (step: number = 1) => {
     if (!isEligible) {
       const reasons: string[] = [];
-      if (!scorePassed) {
-        reasons.push(`・受験可ライン（80点）に達していません。現在：${currentGradeScore}点 / ${currentGradeMax}点`);
+      if (currentGradeScore < APPLY_SCORE) {
+        reasons.push(`・審査可ライン（${APPLY_SCORE}点）に達していません。現在：${currentGradeScore}点 / ${currentGradeMax}点`);
       }
       if (!allRequiredPassed) {
         const names = unmetRequired
@@ -1320,6 +1330,14 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
       }
       alert(`昇級できません。\n\n${reasons.join('\n\n')}`);
       return;
+    }
+    // 60-79点のボーダーゾーンは昇級可能だが念押し確認
+    if (!confidentPass) {
+      const ok = window.confirm(
+        `合格ボーダー（${currentGradeScore}点／合格確実は${PASS_SCORE}点以上）での昇級です。\n` +
+        `審査会での実技評価を踏まえた判断ですか？\n\n続行すると昇級が確定します。`
+      );
+      if (!ok) return;
     }
     const currentIdx = allKyuList.indexOf(currentKyu);
     const nextIdx = currentIdx + step;
@@ -1464,23 +1482,31 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
                 <span className="text-[9px] font-black px-2.5 py-1 rounded-lg" style={{ backgroundColor: 'rgba(0,0,0,0.18)' }}>{currentKyu}</span>
               </div>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-5xl font-black leading-none" style={{ color: isEligible ? '#4ade80' : currentBeltColor.text }}>{currentGradeScore}</span>
+                <span className="text-5xl font-black leading-none"
+                  style={{ color: confidentPass ? '#4ade80' : canApply ? '#fbbf24' : currentBeltColor.text }}>
+                  {currentGradeScore}
+                </span>
                 <span className="text-sm font-black opacity-25">/ {currentGradeMax || '—'}</span>
               </div>
             </div>
-            {isEligible ? (
+            {confidentPass ? (
               <div className="px-3 py-2 rounded-2xl" style={{ backgroundColor: 'rgba(74,222,128,0.18)', border: '1.5px solid rgba(74,222,128,0.4)' }}>
-                <p className="text-[9px] font-black text-green-400 uppercase tracking-wide leading-none">受験可</p>
+                <p className="text-[9px] font-black text-green-400 uppercase tracking-wide leading-none">合格圏</p>
+              </div>
+            ) : canApply ? (
+              <div className="px-3 py-2 rounded-2xl" style={{ backgroundColor: 'rgba(251,191,36,0.18)', border: '1.5px solid rgba(251,191,36,0.4)' }}>
+                <p className="text-[9px] font-black text-amber-300 uppercase tracking-wide leading-none">審査可</p>
+                <p className="text-[7px] font-black text-amber-200 uppercase tracking-widest leading-none mt-0.5 opacity-70">ボーダー</p>
               </div>
             ) : (
               <div className="text-right opacity-60">
-                {!scorePassed && (
+                {currentGradeScore < APPLY_SCORE && (
                   <>
-                    <p className="text-[7px] font-black uppercase tracking-widest">あと</p>
-                    <p className="text-xl font-black leading-none">{Math.max(0, 80 - currentGradeScore)}<span className="text-[9px] ml-0.5">点</span></p>
+                    <p className="text-[7px] font-black uppercase tracking-widest">審査可まで</p>
+                    <p className="text-xl font-black leading-none">{Math.max(0, APPLY_SCORE - currentGradeScore)}<span className="text-[9px] ml-0.5">点</span></p>
                   </>
                 )}
-                {scorePassed && !allRequiredPassed && (
+                {currentGradeScore >= APPLY_SCORE && !allRequiredPassed && (
                   <>
                     <p className="text-[7px] font-black uppercase tracking-widest">必須未達</p>
                     <p className="text-xl font-black leading-none">{unmetRequired.length}<span className="text-[9px] ml-0.5">件</span></p>
@@ -1508,17 +1534,38 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
             </div>
           )}
 
-          {/* プログレスバー */}
+          {/* プログレスバー: 60=審査可, 80=合格圏 の二段マーカー */}
           <div className="mb-4">
             <div className="relative h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(0,0,0,0.18)' }}>
               <div className="h-full rounded-full transition-all duration-700"
-                style={{ width: `${progressPct}%`, backgroundColor: isEligible ? '#4ade80' : 'rgba(255,255,255,0.55)' }} />
+                style={{
+                  width: `${progressPct}%`,
+                  backgroundColor: confidentPass ? '#4ade80' : canApply ? '#fbbf24' : 'rgba(255,255,255,0.55)'
+                }} />
               {currentGradeMax > 0 && (
-                <div className="absolute top-0 h-full w-px" style={{ left: `${Math.min((80 / currentGradeMax) * 100, 100)}%`, backgroundColor: currentBeltColor.text, opacity: 0.5 }} />
+                <>
+                  {/* 60点マーカー（審査可ライン） */}
+                  <div className="absolute top-0 h-full w-px" style={{ left: `${Math.min((APPLY_SCORE / currentGradeMax) * 100, 100)}%`, backgroundColor: '#fbbf24', opacity: 0.6 }} />
+                  {/* 80点マーカー（合格ライン） */}
+                  <div className="absolute top-0 h-full w-px" style={{ left: `${Math.min((PASS_SCORE / currentGradeMax) * 100, 100)}%`, backgroundColor: '#4ade80', opacity: 0.7 }} />
+                </>
               )}
             </div>
-            <div className="flex justify-between text-[7px] font-black mt-1 opacity-35">
-              <span>0</span><span>受験可 80点</span><span>{currentGradeMax > 0 ? `満点 ${currentGradeMax}` : ''}</span>
+            <div className="relative h-4 mt-1">
+              <span className="absolute left-0 text-[7px] font-black opacity-35">0</span>
+              {currentGradeMax > 0 && (
+                <>
+                  <span className="absolute text-[7px] font-black text-amber-300 opacity-80 -translate-x-1/2"
+                    style={{ left: `${Math.min((APPLY_SCORE / currentGradeMax) * 100, 100)}%` }}>
+                    審査可 {APPLY_SCORE}
+                  </span>
+                  <span className="absolute text-[7px] font-black text-green-400 opacity-80 -translate-x-1/2"
+                    style={{ left: `${Math.min((PASS_SCORE / currentGradeMax) * 100, 100)}%` }}>
+                    合格 {PASS_SCORE}
+                  </span>
+                </>
+              )}
+              <span className="absolute right-0 text-[7px] font-black opacity-35">{currentGradeMax > 0 ? currentGradeMax : ''}</span>
             </div>
           </div>
 

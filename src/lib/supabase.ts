@@ -227,7 +227,11 @@ export const getBeltCategoryForGrade = (kyu: string): string => {
 export const gradeToPoint = (g: string): number =>
   g === 'A' ? 10 : g === 'B' ? 6 : g === 'C' ? 3 : 0
 
-export const ELIGIBLE_SCORE = 80
+/** 審査申込み可能ライン。これを超えると「受験可（合格ボーダー）」扱い */
+export const APPLY_SCORE = 60
+/** 合格確実ライン。これを超えると「合格圏」扱い。後方互換のため従来名も残す */
+export const PASS_SCORE = 80
+export const ELIGIBLE_SCORE = PASS_SCORE
 
 // 役割ごとの権限
 export const canCertifyDan = (role: Role) => role === 'master'

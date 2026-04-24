@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { supabase, Profile, normalizeKyu, isValidVideoUrl, BELT_COLORS, getBeltForProfile, isIppan, needsIppanMigration } from '../lib/supabase'
+import { supabase, Profile, normalizeKyu, isValidVideoUrl, BELT_COLORS, getBeltForProfile, isIppan, needsIppanMigration, APPLY_SCORE, PASS_SCORE } from '../lib/supabase'
 import { useLang } from '../lib/i18n'
 
 // --- アカウント設定モーダル（パスワード/メール変更） ---
@@ -205,7 +205,14 @@ export default function StudentDashboard({ profile, onReload, familyProfiles, on
   const rawMax = currentCriteria.length * 10;
   const totalScore = rawMax > 0 ? Math.round((rawScore / rawMax) * 100) : 0;
   const maxScore = currentCriteria.length > 0 ? 100 : 0;
-  const isEligible = maxScore > 0 && totalScore >= 80;
+  const unmetRequired = useMemo(
+    () => currentCriteria.filter(c => c.is_required && c.grade !== 'A' && c.grade !== 'B'),
+    [currentCriteria]
+  );
+  const allRequiredPassed = unmetRequired.length === 0;
+  const canApply = maxScore > 0 && totalScore >= APPLY_SCORE && allRequiredPassed;
+  const confidentPass = maxScore > 0 && totalScore >= PASS_SCORE && allRequiredPassed;
+  const isEligible = canApply;  // 互換
   const progressPct = maxScore > 0 ? Math.min(totalScore, 100) : 0;
 
   const groupedCriteria = useMemo(() => {
@@ -318,31 +325,50 @@ export default function StudentDashboard({ profile, onReload, familyProfiles, on
                   <p className="text-[8px] font-black text-gray-300 uppercase tracking-widest mb-1">Score</p>
                   <div className="flex items-baseline gap-1">
                     <span className="text-5xl font-black leading-none"
-                      style={{ color: isEligible ? '#16a34a' : '#001f3f' }}>{totalScore}</span>
+                      style={{ color: confidentPass ? '#16a34a' : canApply ? '#d97706' : '#001f3f' }}>{totalScore}</span>
                     <span className="text-xs font-black text-gray-200">/ {maxScore || '—'}</span>
                   </div>
                 </div>
-                {isEligible ? (
+                {confidentPass ? (
                   <div className="px-3 py-2 rounded-xl text-center" style={{ backgroundColor: '#dcfce7', border: '1.5px solid #86efac' }}>
-                    <p className="text-[9px] font-black text-green-600 leading-none">{t('受験可', 'Eligible')} ✓</p>
+                    <p className="text-[9px] font-black text-green-600 leading-none">{t('合格圏', 'Pass zone')} ✓</p>
                   </div>
-                ) : maxScore > 0 ? (
+                ) : canApply ? (
+                  <div className="px-3 py-2 rounded-xl text-center" style={{ backgroundColor: '#fef3c7', border: '1.5px solid #fcd34d' }}>
+                    <p className="text-[9px] font-black text-amber-700 leading-none">{t('審査可', 'Can apply')}</p>
+                    <p className="text-[7px] font-black text-amber-600 leading-none mt-0.5 opacity-70">{t('ボーダー', 'Borderline')}</p>
+                  </div>
+                ) : maxScore > 0 && totalScore < APPLY_SCORE ? (
                   <div className="text-right">
-                    <p className="text-[7px] font-black text-gray-300 uppercase leading-none mb-0.5">{t('あと', 'To go')}</p>
-                    <p className="text-2xl font-black text-gray-300 leading-none">{Math.max(0, 80 - totalScore)}<span className="text-[9px]">{t('点', 'pt')}</span></p>
+                    <p className="text-[7px] font-black text-gray-300 uppercase leading-none mb-0.5">{t('審査可まで', 'To apply')}</p>
+                    <p className="text-2xl font-black text-gray-300 leading-none">{Math.max(0, APPLY_SCORE - totalScore)}<span className="text-[9px]">{t('点', 'pt')}</span></p>
+                  </div>
+                ) : maxScore > 0 && !allRequiredPassed ? (
+                  <div className="text-right">
+                    <p className="text-[7px] font-black text-gray-300 uppercase leading-none mb-0.5">{t('必須未達', 'Required')}</p>
+                    <p className="text-2xl font-black text-gray-300 leading-none">{unmetRequired.length}<span className="text-[9px]">{t('件', '')}</span></p>
                   </div>
                 ) : null}
               </div>
               <div className="relative h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1">
                 <div className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${progressPct}%`, backgroundColor: isEligible ? '#22c55e' : bc.bg }} />
+                  style={{ width: `${progressPct}%`, backgroundColor: confidentPass ? '#22c55e' : canApply ? '#f59e0b' : bc.bg }} />
                 {maxScore > 0 && (
-                  <div className="absolute top-0 h-full w-px opacity-30 bg-gray-400"
-                    style={{ left: `${Math.min((80 / maxScore) * 100, 100)}%` }} />
+                  <>
+                    <div className="absolute top-0 h-full w-px" style={{ left: `${Math.min((APPLY_SCORE / maxScore) * 100, 100)}%`, backgroundColor: '#f59e0b', opacity: 0.5 }} />
+                    <div className="absolute top-0 h-full w-px" style={{ left: `${Math.min((PASS_SCORE / maxScore) * 100, 100)}%`, backgroundColor: '#22c55e', opacity: 0.6 }} />
+                  </>
                 )}
               </div>
-              <div className="flex justify-between text-[7px] font-black text-gray-300">
-                <span>0</span><span>{t('受験可 80点', 'Eligible 80')}</span><span>{maxScore > 0 ? t(`${maxScore}点満点`, `Max ${maxScore}`) : ''}</span>
+              <div className="relative h-4 text-[7px] font-black text-gray-300">
+                <span className="absolute left-0">0</span>
+                {maxScore > 0 && (
+                  <>
+                    <span className="absolute text-amber-600 -translate-x-1/2" style={{ left: `${Math.min((APPLY_SCORE / maxScore) * 100, 100)}%` }}>{t('審査可', 'Apply')} {APPLY_SCORE}</span>
+                    <span className="absolute text-green-600 -translate-x-1/2" style={{ left: `${Math.min((PASS_SCORE / maxScore) * 100, 100)}%` }}>{t('合格', 'Pass')} {PASS_SCORE}</span>
+                  </>
+                )}
+                <span className="absolute right-0">{maxScore > 0 ? maxScore : ''}</span>
               </div>
             </>
           )}
