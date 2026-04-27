@@ -205,12 +205,15 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
 
   // 新フォーマット審査CSV: 帯, 級, 種類, 内容, 動画
   // ★プレフィックスは is_required=true のサイン（★形/★体力測定/★精神面）
+  // upsert方式: (dan, examination_type, examination_content, division) で既存行を更新。
+  // 既存行の id を保持するため、evaluations.criterion_id 経由の点数データが消えない。
   const handleCriteriaCsvImport = async (division: 'junior' | 'general') => {
     const divisionLabel = division === 'junior' ? '少年部' : '一般部';
     if (!window.confirm(
-      `${divisionLabel}の審査基準を取込します。\n\n` +
-      `現在の ${divisionLabel}（division='${division}'）のデータは全削除され、\n` +
-      `CSV の内容で置き換わります。共通項目(division='both')と他方の区分は維持。\n\n続行しますか？`
+      `${divisionLabel}の審査基準を更新します。\n\n` +
+      `・CSV内の項目で「帯・種類・内容」が一致する既存項目は内容のみ上書き（評価・点数は保持）\n` +
+      `・CSVに無い新規項目は追加\n` +
+      `・CSVに無い既存項目はDBに残します（点数も保持）\n\n続行しますか？`
     )) return;
 
     const input = document.createElement('input');
@@ -268,22 +271,17 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
           return;
         }
 
-        // 該当divisionを全削除 → バッチinsert（bothは温存）
-        const { error: delErr } = await supabase
+        // upsert: 既存(dan,type,content,division)が一致する行は id を保ったまま UPDATE。
+        // → criterion_id を参照する evaluations の点数データが消えない。
+        const { error: upsertErr } = await supabase
           .from('criteria')
-          .delete()
-          .eq('division', division);
-        if (delErr) {
-          alert(`既存データ削除失敗:\n${delErr.message}`);
-          return;
-        }
-        const { error: insErr } = await supabase.from('criteria').insert(batch);
-        if (insErr) {
-          alert(`インポートエラー:\n${insErr.message}`);
+          .upsert(batch, { onConflict: 'dan,examination_type,examination_content,division' });
+        if (upsertErr) {
+          alert(`インポートエラー:\n${upsertErr.message}`);
           return;
         }
         setCriteriaVersion((v: number) => v + 1);
-        alert(`${divisionLabel}審査基準 ${batch.length}件 取込完了`);
+        alert(`${divisionLabel}審査基準 ${batch.length}件 取込完了\n既存の点数（評価データ）は保持されました。`);
       };
       reader.readAsText(file);
     };
@@ -396,7 +394,16 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
         </button>
       )}
 
-      <div className={`fixed inset-y-0 left-0 z-40 w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
+      {/* スマホでサイドバー開時のバックドロップ。タップで閉じる。 */}
+      {isSidebarOpen && (
+        <div
+          onClick={() => setIsSidebarOpen(false)}
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          aria-hidden="true"
+        />
+      )}
+
+      <div className={`fixed inset-y-0 left-0 z-40 w-80 max-w-[85vw] bg-white border-r border-gray-200 flex flex-col shadow-xl transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 md:max-w-none`}>
         <div className="p-6 bg-[#001f3f] text-white">
           <div className="flex justify-between items-start mb-4 gap-2">
             <div className="min-w-0">
@@ -423,6 +430,13 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
                 className="text-[9px] bg-red-600/90 hover:bg-red-600 px-2 py-1.5 rounded-md font-black uppercase"
                 title="Logout">
                 Logout
+              </button>
+              {/* スマホ専用: サイドバーを閉じる */}
+              <button onClick={() => setIsSidebarOpen(false)}
+                className="md:hidden ml-1 w-7 h-7 flex items-center justify-center bg-white/15 hover:bg-white/25 rounded-md font-black text-sm"
+                title={t('閉じる', 'Close')}
+                aria-label={t('サイドバーを閉じる', 'Close sidebar')}>
+                ✕
               </button>
             </div>
           </div>
@@ -544,7 +558,7 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
               <span className="opacity-80">{t('休会・退会者も表示', 'Include paused / resigned')}</span>
             </label>
             {attendingIds.size > 0 && (
-              <div className="mt-1 p-2 bg-emerald-500/15 border border-emerald-400/30 rounded-lg">
+              <div className="mt-1 p-2 bg-emerald-500/15 border border-emerald-400/30 rounded-lg space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] font-black text-emerald-300">
                     {t(`出席中: ${attendingIds.size}名`, `Attending: ${attendingIds.size}`)}
@@ -553,6 +567,12 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
                     {t('クリア', 'Clear')}
                   </button>
                 </div>
+                {/* スマホ専用: 評価画面へ遷移（サイドバーを閉じる） */}
+                <button
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="md:hidden w-full py-2 bg-emerald-500 hover:bg-emerald-600 rounded-md text-[10px] font-black text-white uppercase tracking-wider">
+                  ▶ {t('評価画面へ', 'Start Evaluation')}
+                </button>
               </div>
             )}
           </div>
