@@ -34,7 +34,21 @@ export default function App() {
       else setReady(true)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      // PASSWORD_RECOVERY: パスワードリセットリンクをクリックして来た場合。
+      // この時、もし他のユーザー（特に管理者）がログイン中だったら、そのセッションが
+      // 上書きされる事故になる。明示的に警告 + 強制ログアウトして安全にやり直す。
+      if (event === 'PASSWORD_RECOVERY') {
+        alert(
+          'パスワードリセット用リンクが検出されました。\n\n' +
+          'セキュリティ保護のため、現在のセッションを終了します。\n' +
+          '新しいパスワードを設定するには、もう一度メールのリンクをクリックしてください。\n\n' +
+          '※ 管理者の方は、生徒のリセットリンクを絶対に開かないでください。\n' +
+          '　 生徒のパスワード再設定は管理画面の「一時パスワード生成」をご利用ください。'
+        )
+        supabase.auth.signOut()
+        return
+      }
       setSession(s)
       if (s?.user?.email) {
         loadProfile(s.user.email)

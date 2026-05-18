@@ -48,6 +48,8 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [criteriaVersion, setCriteriaVersion] = useState(0)
   const [showAddStudent, setShowAddStudent] = useState(false)
+  // アカウント設定モーダル（自分のパスワード・メール変更）
+  const [showAccountSettings, setShowAccountSettings] = useState(false)
   // 管理メニュー（CSV読込・支部追加・全削除等の低頻度操作）の開閉
   const [showAdminTools, setShowAdminTools] = useState(false)
   // マスターのみ: スタッフ（管理者アカウント）を一覧に含めるトグル
@@ -419,6 +421,11 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
             </div>
             <div className="flex items-center gap-1 shrink-0">
               <LangToggle className="text-[9px] bg-white/15 hover:bg-white/25 px-2 py-1.5 rounded-md font-black" />
+              <button onClick={() => setShowAccountSettings(true)}
+                className="text-[9px] bg-white/15 hover:bg-white/25 px-2 py-1.5 rounded-md font-black"
+                title={t('自分のパスワード・メール変更', 'Change own password / email')}>
+                {t('アカウント', 'Account')}
+              </button>
               {onSwitchToStudent && (
                 <button onClick={onSwitchToStudent}
                   className="text-[9px] bg-white/15 hover:bg-white/25 px-2 py-1.5 rounded-md font-black"
@@ -742,8 +749,139 @@ export default function AdminDashboard({ profile: adminProfile, onReload, onSwit
           }}
         />
       )}
+
+      {/* 自分のアカウント設定（パスワード・メール変更） */}
+      {showAccountSettings && (
+        <AdminAccountSettingsModal
+          profile={adminProfile}
+          onClose={() => setShowAccountSettings(false)}
+        />
+      )}
     </div>
   )
+}
+
+// --- 管理者の自分用アカウント設定モーダル ---
+// 管理者のセッションで supabase.auth.updateUser を呼ぶので、
+// 必ず管理者自身のパスワード/メールが変更される。
+function AdminAccountSettingsModal({ profile, onClose }: { profile: Profile; onClose: () => void }) {
+  const [tab, setTab] = useState<'password' | 'email'>('password');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handlePasswordChange = async () => {
+    if (newPassword.length < 8) {
+      alert('パスワードは8文字以上で設定してください。');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert('確認用パスワードが一致しません。');
+      return;
+    }
+    if (!confirm('自分（管理者）のパスワードを変更します。よろしいですか？')) return;
+    setSubmitting(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setSubmitting(false);
+    if (error) {
+      alert('パスワード変更に失敗しました: ' + error.message);
+      return;
+    }
+    alert('パスワードを変更しました。次回ログインから新しいパスワードをお使いください。');
+    setNewPassword('');
+    setConfirmPassword('');
+    onClose();
+  };
+
+  const handleEmailChange = async () => {
+    const trimmed = newEmail.trim().toLowerCase();
+    if (!trimmed || !trimmed.includes('@')) {
+      alert('有効なメールアドレスを入力してください。');
+      return;
+    }
+    if (trimmed === (profile.login_email || '').toLowerCase()) {
+      alert('現在のメールアドレスと同じです。');
+      return;
+    }
+    if (!confirm(`新しいメールアドレス「${trimmed}」に確認メールを送信します。\n\n届いたメールのリンクをクリックして変更を完了してください。`)) return;
+    setSubmitting(true);
+    const { error } = await supabase.auth.updateUser({ email: trimmed });
+    setSubmitting(false);
+    if (error) {
+      alert('メール変更の送信に失敗しました: ' + error.message);
+      return;
+    }
+    alert(`確認メールを「${trimmed}」に送信しました。届いたメールのリンクをクリックして変更を完了してください。`);
+    setNewEmail('');
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-[40px] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h3 className="text-xl font-black text-[#001f3f]">アカウント設定</h3>
+            <p className="text-[10px] text-gray-500 font-bold mt-1">{profile.name} / {profile.login_email}</p>
+          </div>
+          <button onClick={onClose} className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 font-black hover:bg-gray-200">✕</button>
+        </div>
+
+        <div className="flex gap-2 mb-6 border-b border-gray-200">
+          {([
+            { k: 'password' as const, label: 'パスワード変更' },
+            { k: 'email' as const, label: 'メール変更' },
+          ]).map(item => (
+            <button key={item.k}
+              onClick={() => setTab(item.k)}
+              className={`flex-1 py-3 text-xs font-black ${tab === item.k ? 'text-[#001f3f] border-b-2 border-[#001f3f]' : 'text-gray-400'}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'password' ? (
+          <div className="space-y-4">
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">新しいパスワード（8文字以上）</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+            </div>
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">確認用パスワード</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+            </div>
+            <button onClick={handlePasswordChange} disabled={submitting}
+              className="w-full py-3 bg-[#001f3f] text-white rounded-2xl text-sm font-black disabled:opacity-50 hover:bg-[#003366]">
+              {submitting ? '変更中...' : '自分のパスワードを変更'}
+            </button>
+            <p className="text-[10px] text-gray-500 font-bold leading-relaxed">
+              ※ 変更後もログイン状態は継続します。次回ログインから新しいパスワードをお使いください。
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1">新しいメールアドレス</label>
+              <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
+                placeholder="new-email@example.com"
+                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-[#001f3f]" />
+            </div>
+            <button onClick={handleEmailChange} disabled={submitting}
+              className="w-full py-3 bg-[#001f3f] text-white rounded-2xl text-sm font-black disabled:opacity-50 hover:bg-[#003366]">
+              {submitting ? '送信中...' : '確認メールを送信'}
+            </button>
+            <p className="text-[10px] text-gray-500 font-bold leading-relaxed">
+              ※ 確認メール内のリンクをクリックすると変更が完了します。
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ISO日時文字列を YYYY-MM-DD に整形（HTML date input 用）
@@ -922,20 +1060,47 @@ function EditPanel({ student, adminProfile, branches, onClose, onSave }: { stude
   );
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [tempPasswordModal, setTempPasswordModal] = useState<{
+    studentName: string;
+    studentEmail: string;
+    tempPassword: string;
+  } | null>(null);
 
   const handlePasswordReset = async () => {
     if (!student.login_email) {
       alert('この会員にはログイン用メールアドレスが登録されていません。');
       return;
     }
-    if (!confirm(`${student.login_email} にパスワードリセット用のメールを送信します。よろしいですか？`)) return;
+    if (student.id === adminProfile.id) {
+      alert('自分自身のパスワードは「アカウント設定」から変更してください。');
+      return;
+    }
+    if (!confirm(
+      `${student.name} さんの一時パスワードを生成します。\n` +
+      `生成されたパスワードを画面で確認し、直接ご本人にお伝えください。\n` +
+      `（メールは送信されません・管理者のセッションには影響しません）\n\n` +
+      `続行しますか？`
+    )) return;
     setResetting(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(student.login_email, {
-      redirectTo: `${APP_URL}/`,
-    });
-    setResetting(false);
-    if (error) alert('送信に失敗しました: ' + error.message);
-    else alert('パスワードリセット用メールを送信しました。');
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-reset-member-password', {
+        body: { studentProfileId: student.id },
+      });
+      if (error || !data?.tempPassword) {
+        const msg = data?.error || error?.message || '不明なエラー';
+        alert('パスワード設定に失敗しました: ' + msg);
+        return;
+      }
+      setTempPasswordModal({
+        studentName: data.studentName || student.name,
+        studentEmail: data.studentEmail || student.login_email,
+        tempPassword: data.tempPassword,
+      });
+    } catch (e: any) {
+      alert('通信エラー: ' + (e?.message ?? String(e)));
+    } finally {
+      setResetting(false);
+    }
   };
 
   const gradeOptions = adminRole === 'master'
@@ -1177,19 +1342,28 @@ function EditPanel({ student, adminProfile, branches, onClose, onSave }: { stude
         )}
 
         {/* パスワードリセット（管理者操作） */}
-        <div className="mt-6 pt-6 border-t border-gray-100">
-          <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-2">アカウント操作</label>
-          <button
-            onClick={handlePasswordReset}
-            disabled={resetting || !student.login_email}
-            className="w-full py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-2xl text-xs font-black hover:bg-orange-100 disabled:opacity-50"
-          >
-            {resetting ? '送信中...' : 'パスワードリセットメールを送信'}
-          </button>
-          {student.login_email && (
-            <p className="text-[10px] text-gray-400 mt-2 font-bold">送信先: {student.login_email}</p>
-          )}
-        </div>
+        {!isSelf && (
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-2">アカウント操作</label>
+            <button
+              onClick={handlePasswordReset}
+              disabled={resetting || !student.login_email}
+              className="w-full py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-2xl text-xs font-black hover:bg-orange-100 disabled:opacity-50"
+            >
+              {resetting ? '生成中...' : '🔑 一時パスワードを生成して画面に表示'}
+            </button>
+            <p className="text-[10px] text-gray-500 mt-2 leading-relaxed font-bold">
+              ・メールは送信されません<br/>
+              ・画面に表示された一時パスワードを直接ご本人にお伝えください<br/>
+              ・管理者のセッションには一切影響しません（安全）
+            </p>
+          </div>
+        )}
+        {isSelf && (
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <p className="text-[10px] text-gray-400 font-bold">※ 自分自身のパスワードは「アカウント設定」から変更してください。</p>
+          </div>
+        )}
 
         <div className="flex gap-3 mt-8">
           <button onClick={onClose} className="flex-1 py-3 bg-gray-100 rounded-2xl text-sm font-black text-gray-500 hover:bg-gray-200">キャンセル</button>
@@ -1197,6 +1371,92 @@ function EditPanel({ student, adminProfile, branches, onClose, onSave }: { stude
             {saving ? '保存中...' : '保存する'}
           </button>
         </div>
+      </div>
+      {/* 一時パスワード表示モーダル */}
+      {tempPasswordModal && (
+        <TempPasswordModal
+          studentName={tempPasswordModal.studentName}
+          studentEmail={tempPasswordModal.studentEmail}
+          tempPassword={tempPasswordModal.tempPassword}
+          onClose={() => setTempPasswordModal(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// --- 一時パスワード表示モーダル ---
+function TempPasswordModal({ studentName, studentEmail, tempPassword, onClose }: {
+  studentName: string;
+  studentEmail: string;
+  tempPassword: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(tempPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // フォールバック
+      const ta = document.createElement('textarea');
+      ta.value = tempPassword;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md" onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-[40px] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-2xl">✓</div>
+            <h3 className="text-lg font-black text-[#001f3f]">一時パスワード生成完了</h3>
+          </div>
+        </div>
+        <div className="bg-gray-50 rounded-2xl p-4 mb-4">
+          <p className="text-[10px] font-black text-gray-400 uppercase mb-1">対象会員</p>
+          <p className="text-sm font-bold text-[#001f3f]">{studentName}</p>
+          <p className="text-xs text-gray-500">{studentEmail}</p>
+        </div>
+        <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-4 mb-4">
+          <p className="text-[10px] font-black text-orange-700 uppercase mb-2">一時パスワード</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 bg-white px-4 py-3 rounded-xl font-mono text-lg font-bold text-[#001f3f] tracking-wider border border-orange-200">
+              {tempPassword}
+            </code>
+            <button
+              onClick={copyToClipboard}
+              className="px-4 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-black text-xs whitespace-nowrap"
+            >
+              {copied ? '✓ コピー済' : 'コピー'}
+            </button>
+          </div>
+        </div>
+        <div className="bg-blue-50 rounded-2xl p-4 mb-6 space-y-2">
+          <p className="text-xs font-black text-blue-900">📋 次のステップ:</p>
+          <ol className="text-xs text-blue-800 list-decimal list-inside space-y-1 font-bold">
+            <li>このパスワードを<span className="text-red-600">対面・電話・LINE等で直接</span>ご本人にお伝えください</li>
+            <li>ご本人は次回ログインで一時パスワードを使ってください</li>
+            <li>ログイン後「アカウント設定」から自分のパスワードに変更するよう案内してください</li>
+          </ol>
+        </div>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+          <p className="text-[10px] text-red-700 font-bold leading-relaxed">
+            ⚠️ このパスワードは画面を閉じると再表示できません。今すぐコピーまたはメモしてください。
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          className="w-full py-3 bg-[#001f3f] text-white rounded-2xl text-sm font-black hover:bg-[#003366]"
+        >
+          確認して閉じる
+        </button>
       </div>
     </div>
   );
