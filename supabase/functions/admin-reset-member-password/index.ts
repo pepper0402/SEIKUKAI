@@ -96,11 +96,8 @@ Deno.serve(async (req: Request) => {
     if (studentErr || !student) {
       return json({ error: '対象生徒が見つかりません' }, 404)
     }
-    if (!student.user_id) {
-      return json({ error: 'この会員はまだ Auth ユーザーが紐づいていません' }, 400)
-    }
     if (!student.login_email) {
-      return json({ error: 'この会員にはログイン用メールが設定されていません' }, 400)
+      return json({ error: 'この会員にはログイン用メールが設定されていません。先に「データ修正」でログイン用メールを入力してください' }, 400)
     }
 
     // Step 4: 支部長は自支部の生徒のみ操作可
@@ -109,17 +106,63 @@ Deno.serve(async (req: Request) => {
     }
 
     // 自分自身への操作は禁止（管理者が自分の Edge Function で自分のパスワードを変えるのは別UIに）
-    if (student.user_id === user.id) {
+    if (student.user_id && student.user_id === user.id) {
       return json({ error: '自分自身のパスワードは「アカウント設定」から変更してください' }, 400)
     }
 
-    // Step 5: 一時パスワード生成 → auth.admin で設定
+    // Step 5: 一時パスワード生成 → Auth user の存在に応じて分岐
     const tempPassword = generateTempPassword(12)
-    const { error: updErr } = await adminSupabase.auth.admin.updateUserById(student.user_id, {
-      password: tempPassword,
-    })
-    if (updErr) {
-      return json({ error: 'パスワード更新失敗: ' + updErr.message }, 500)
+    let targetUserId = student.user_id as string | null
+    let createdNewAuth = false
+
+    if (targetUserId) {
+      // 既存 Auth user のパスワード更新
+      const { error: updErr } = await adminSupabase.auth.admin.updateUserById(targetUserId, {
+        password: tempPassword,
+      })
+      if (updErr) {
+        return json({ error: 'パスワード更新失敗: ' + updErr.message }, 500)
+      }
+    } else {
+      // Auth user が未作成 → このメールで既存ユーザーがいないか確認
+      // listUsers でメール一致を探す
+      const { data: existing, error: listErr } = await adminSupabase.auth.admin.listUsers()
+      if (listErr) {
+        return json({ error: 'Auth ユーザー一覧取得失敗: ' + listErr.message }, 500)
+      }
+      const matched = existing.users.find(u => (u.email ?? '').toLowerCase() === student.login_email.toLowerCase())
+
+      if (matched) {
+        // 同じメールの Auth user が既にいる → そのパスワードを更新 + profile に紐づけ
+        targetUserId = matched.id
+        const { error: updErr } = await adminSupabase.auth.admin.updateUserById(targetUserId, {
+          password: tempPassword,
+        })
+        if (updErr) {
+          return json({ error: '既存 Auth ユーザーのパスワード更新失敗: ' + updErr.message }, 500)
+        }
+      } else {
+        // 新規 Auth user を作成
+        const { data: created, error: createErr } = await adminSupabase.auth.admin.createUser({
+          email: student.login_email,
+          password: tempPassword,
+          email_confirm: true,  // 確認メールは送らず即時有効化（管理者操作のため）
+        })
+        if (createErr || !created.user) {
+          return json({ error: 'Auth ユーザー作成失敗: ' + (createErr?.message ?? 'unknown') }, 500)
+        }
+        targetUserId = created.user.id
+        createdNewAuth = true
+      }
+
+      // profile.user_id を紐づけ
+      const { error: profUpdErr } = await adminSupabase
+        .from('profiles')
+        .update({ user_id: targetUserId })
+        .eq('id', student.id)
+      if (profUpdErr) {
+        return json({ error: 'profile への user_id 紐づけ失敗: ' + profUpdErr.message }, 500)
+      }
     }
 
     // 監査ログ（任意・テーブルがあれば）
@@ -129,6 +172,7 @@ Deno.serve(async (req: Request) => {
       tempPassword,
       studentName: student.name,
       studentEmail: student.login_email,
+      createdNewAuth,
     }, 200)
   } catch (e) {
     return json({ error: '内部エラー: ' + ((e as Error).message ?? String(e)) }, 500)

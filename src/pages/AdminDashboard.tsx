@@ -1064,6 +1064,7 @@ function EditPanel({ student, adminProfile, branches, onClose, onSave }: { stude
     studentName: string;
     studentEmail: string;
     tempPassword: string;
+    createdNewAuth?: boolean;
   } | null>(null);
 
   const handlePasswordReset = async () => {
@@ -1095,6 +1096,7 @@ function EditPanel({ student, adminProfile, branches, onClose, onSave }: { stude
         studentName: data.studentName || student.name,
         studentEmail: data.studentEmail || student.login_email,
         tempPassword: data.tempPassword,
+        createdNewAuth: data.createdNewAuth || false,
       });
     } catch (e: any) {
       alert('通信エラー: ' + (e?.message ?? String(e)));
@@ -1378,6 +1380,7 @@ function EditPanel({ student, adminProfile, branches, onClose, onSave }: { stude
           studentName={tempPasswordModal.studentName}
           studentEmail={tempPasswordModal.studentEmail}
           tempPassword={tempPasswordModal.tempPassword}
+          createdNewAuth={tempPasswordModal.createdNewAuth}
           onClose={() => setTempPasswordModal(null)}
         />
       )}
@@ -1386,10 +1389,11 @@ function EditPanel({ student, adminProfile, branches, onClose, onSave }: { stude
 }
 
 // --- 一時パスワード表示モーダル ---
-function TempPasswordModal({ studentName, studentEmail, tempPassword, onClose }: {
+function TempPasswordModal({ studentName, studentEmail, tempPassword, createdNewAuth, onClose }: {
   studentName: string;
   studentEmail: string;
   tempPassword: string;
+  createdNewAuth?: boolean;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -1424,6 +1428,14 @@ function TempPasswordModal({ studentName, studentEmail, tempPassword, onClose }:
           <p className="text-sm font-bold text-[#001f3f]">{studentName}</p>
           <p className="text-xs text-gray-500">{studentEmail}</p>
         </div>
+        {createdNewAuth && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-3 mb-4">
+            <p className="text-[10px] text-yellow-800 font-bold leading-relaxed">
+              ✨ この会員は初回のため、Authアカウントを新規作成しました。<br/>
+              　 このパスワードを伝えれば、すぐにログインできます。
+            </p>
+          </div>
+        )}
         <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-4 mb-4">
           <p className="text-[10px] font-black text-orange-700 uppercase mb-2">一時パスワード</p>
           <div className="flex items-center gap-2">
