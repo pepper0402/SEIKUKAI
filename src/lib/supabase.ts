@@ -199,19 +199,30 @@ export const needsIppanMigration = (profile: Pick<Profile, 'birthday' | 'keeps_j
   return age !== null && age >= 15
 }
 
+/** 級・段 → 帯カテゴリ の静的マッピング（年齢に依存しない基本対応表） */
+export const KYU_TO_BELT_CATEGORY: Record<string, string> = {
+  '無級':   '白帯',
+  '準10級': '黄帯', '10級':   '黄帯', '準9級':  '黄帯', '9級':  '黄帯',
+  '準8級':  '青帯', '8級':    '青帯', '準7級': '青帯', '7級': '青帯',
+  '準6級':  '橙帯/紫帯', '6級': '橙帯/紫帯', '準5級': '橙帯/紫帯', '5級': '橙帯/紫帯',
+  '準4級':  '緑帯', '4級':    '緑帯', '準3級': '緑帯', '3級': '緑帯',
+  '準2級':  '茶帯', '2級':    '茶帯', '準1級': '茶帯', '1級': '茶帯',
+  '初段':   '黒帯', '弍段':   '黒帯', '参段':  '黒帯', '四段': '黒帯', '五段': '黒帯',
+}
+
 /** プロファイル全体から age/学年-aware な帯名を返す（keeps_junior_rank にも対応） */
 export const getBeltForProfile = (profile: Pick<Profile, 'kyu' | 'birthday' | 'keeps_junior_rank' | 'gakuinen'> | null | undefined): string => {
   if (!profile) return '白帯'
   const k = normalizeKyu(profile.kyu)
+  const category = KYU_TO_BELT_CATEGORY[k] ?? '白帯'
   const ippan = isIppan(profile)
-  if (k === '無級' || k.includes('準10級')) return '白帯'
-  if (k.includes('10級') || k.includes('9級')) return '黄帯'
-  if (k.includes('8級')  || k.includes('7級')) return '青帯'
-  if (k.includes('6級')  || k.includes('5級')) return ippan ? '紫帯' : '橙帯'
-  if (k.includes('4級')  || k.includes('3級')) return ippan ? '一般緑帯' : '少年緑帯'
-  if (k.includes('2級')  || k.includes('1級')) return ippan ? '一般茶帯' : '少年茶帯'
-  if (k.includes('段')) return ippan ? '一般黒帯' : '少年黒帯'
-  return '白帯'
+  switch (category) {
+    case '橙帯/紫帯': return ippan ? '紫帯'    : '橙帯'
+    case '緑帯':      return ippan ? '一般緑帯' : '少年緑帯'
+    case '茶帯':      return ippan ? '一般茶帯' : '少年茶帯'
+    case '黒帯':      return ippan ? '一般黒帯' : '少年黒帯'
+    default:          return category
+  }
 }
 
 /** ナビ用の帯カテゴリ（年齢に依らない、級の範囲ベース） */
