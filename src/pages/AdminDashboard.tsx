@@ -1910,6 +1910,8 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   const [student, setStudent] = useState(initialStudent);
   const [recentPromotion, setRecentPromotion] = useState<any | null>(null);
   const [reversing, setReversing] = useState(false);
+  // 採点リストの絞り込み: すべて / 未採点のみ / 必須のみ（道場で素早く対象を絞る）
+  const [scoreFilter, setScoreFilter] = useState<'all' | 'unscored' | 'required'>('all');
 
   const currentKyu = normalizeKyu(student.kyu);
   // 生徒表示用（年齢込みの帯名・色）
@@ -1946,7 +1948,8 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
         && (c.division === 'both' || c.division === divisionFilter || !c.division)
       );
       console.log('[AdminDashboard/view] viewGrade=', viewGrade, 'ippan=', ippan, 'total=', crit?.length, 'matched=', filtered.length);
-      setCriteria(filtered.map((c: any) => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || 'D' })));
+      // 評価行が無い項目は null（未採点）。暗黙の 'D' にしない＝「採点済D」と「未採点」を区別できる
+      setCriteria(filtered.map((c: any) => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || null })));
       setLoading(false);
     }
     fetchEvals()
@@ -1984,7 +1987,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
         normalizeKyu(c.dan) === currentKyu
         && (c.division === 'both' || c.division === divisionFilter || !c.division)
       );
-      setCurrentGradeEvals(filtered.map((c: any) => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || 'D' })));
+      setCurrentGradeEvals(filtered.map((c: any) => ({ ...c, grade: evals?.find((e: any) => e.criterion_id === c.id)?.grade || null })));
     }
     fetchCurrentGrade()
   }, [student.id, currentKyu, criteriaRefreshKey])
@@ -2016,15 +2019,99 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
   // 従来の isEligible = 昇級確定ボタンを押せる条件。60点以上＋必須クリアで押せる（ボーダーも押下可）
   const isEligible = canApply;
 
+  // 採点フィルタ適用後の表示対象
+  const visibleCriteria = useMemo(() => criteria.filter((c: any) => {
+    if (scoreFilter === 'unscored') return !c.grade;        // 未採点(null)のみ
+    if (scoreFilter === 'required') return c.is_required;   // 必須のみ
+    return true;
+  }), [criteria, scoreFilter]);
+
+  const unscoredCount = useMemo(() => criteria.filter((c: any) => !c.grade).length, [criteria]);
+  const requiredCount = useMemo(() => criteria.filter((c: any) => c.is_required).length, [criteria]);
+
   const groupedCriteria: [string, any[]][] = useMemo(() => {
     const groups: Record<string, any[]> = {};
-    criteria.forEach((c: any) => {
+    visibleCriteria.forEach((c: any) => {
       const key = c.examination_type || 'その他';
       if (!groups[key]) groups[key] = [];
       groups[key].push(c);
     });
     return Object.entries(groups);
-  }, [criteria]);
+  }, [visibleCriteria]);
+
+  // ローカル状態（criteria / currentGradeEvals）に grade を反映する共通処理
+  const applyGradeLocal = (id: number, g: string | null) => {
+    setCriteria((prev: any[]) => prev.map((item: any) => item.id === id ? { ...item, grade: g } : item));
+    if (viewGrade === currentKyu) {
+      setCurrentGradeEvals((prev: any[]) => prev.map((item: any) => item.id === id ? { ...item, grade: g } : item));
+    }
+  };
+
+  // DBへ grade を保存（null=評価行を削除して未採点に戻す）
+  const persistGrade = async (id: number, g: string | null) => {
+    if (g === null) {
+      await supabase.from('evaluations').delete().eq('student_id', student.id).eq('criterion_id', id);
+    } else {
+      await supabase.from('evaluations').upsert(
+        { student_id: student.id, criterion_id: id, grade: g },
+        { onConflict: 'student_id,criterion_id' }
+      );
+    }
+  };
+
+  // 単項目の採点（誤タップ救済のため Undo トースト付き）
+  const scoreOne = (c: any, g: string) => {
+    const prev = c.grade ?? null;
+    if (prev === g) return;
+    applyGradeLocal(c.id, g);
+    persistGrade(c.id, g);
+    toast.push(
+      `${c.examination_content?.slice(0, 14) || '項目'} → ${g}`,
+      'success', 4000,
+      { label: t('元に戻す', 'Undo'), onClick: () => { applyGradeLocal(c.id, prev); persistGrade(c.id, prev); } }
+    );
+  };
+
+  // 一括: 未採点(null)の項目だけ B で埋める（既存の A/C/D は壊さない・非破壊）
+  const bulkFillUnscoredB = async () => {
+    const targets = criteria.filter((c: any) => !c.grade);
+    if (targets.length === 0) { toast.info(t('未採点の項目はありません', 'No unscored items')); return; }
+    const snapshot = targets.map((c: any) => c.id);
+    targets.forEach((c: any) => applyGradeLocal(c.id, 'B'));
+    await supabase.from('evaluations').upsert(
+      targets.map((c: any) => ({ student_id: student.id, criterion_id: c.id, grade: 'B' })),
+      { onConflict: 'student_id,criterion_id' }
+    );
+    toast.push(
+      t(`未採点 ${targets.length} 件を B にしました`, `Filled ${targets.length} unscored items with B`),
+      'success', 6000,
+      { label: t('元に戻す', 'Undo'), onClick: async () => {
+        snapshot.forEach((id) => applyGradeLocal(id, null));
+        await supabase.from('evaluations').delete().eq('student_id', student.id).in('criterion_id', snapshot);
+      } }
+    );
+  };
+
+  // 一括: この級の評価をすべてクリア（確認あり）
+  const bulkClearGrades = async () => {
+    const scored = criteria.filter((c: any) => c.grade);
+    if (scored.length === 0) { toast.info(t('クリアする評価がありません', 'Nothing to clear')); return; }
+    if (!window.confirm(t(`この級の評価 ${scored.length} 件をすべてクリアします。よろしいですか？`, `Clear all ${scored.length} evaluations for this grade?`))) return;
+    const backup = scored.map((c: any) => ({ id: c.id, grade: c.grade }));
+    scored.forEach((c: any) => applyGradeLocal(c.id, null));
+    await supabase.from('evaluations').delete().eq('student_id', student.id).in('criterion_id', backup.map(b => b.id));
+    toast.push(
+      t(`${scored.length} 件をクリアしました`, `Cleared ${scored.length} items`),
+      'warn', 7000,
+      { label: t('元に戻す', 'Undo'), onClick: async () => {
+        backup.forEach((b) => applyGradeLocal(b.id, b.grade));
+        await supabase.from('evaluations').upsert(
+          backup.map((b) => ({ student_id: student.id, criterion_id: b.id, grade: b.grade })),
+          { onConflict: 'student_id,criterion_id' }
+        );
+      } }
+    );
+  };
 
   const handlePromote = async (step: number = 1) => {
     if (!isEligible) {
@@ -2422,6 +2509,39 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
         </div>
       )}
 
+      {/* ===== 採点コントロールバー（フィルタ＋一括採点） ===== */}
+      {!loading && criteria.length > 0 && canScore(adminRole) && (
+        <div className="bg-white rounded-[18px] p-2.5 shadow-sm border border-gray-50 mb-3 space-y-2">
+          <div className="flex gap-1">
+            {([
+              { k: 'all'      as const, label: t('すべて', 'All'),      n: criteria.length },
+              { k: 'unscored' as const, label: t('未採点', 'Unscored'), n: unscoredCount },
+              { k: 'required' as const, label: t('必須', 'Required'),   n: requiredCount },
+            ]).map(f => {
+              const on = scoreFilter === f.k
+              return (
+                <button key={f.k} onClick={() => setScoreFilter(f.k)}
+                  className={`flex-1 py-2 rounded-xl text-[11px] font-black transition-colors ${on ? 'bg-[#001f3f] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                  {f.label} <span className={on ? 'opacity-70' : 'opacity-50'}>{f.n}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex gap-1">
+            <button onClick={bulkFillUnscoredB}
+              title={t('未採点の項目だけBで埋める（A/C/Dは変更しない）', 'Fill only unscored items with B (keeps A/C/D)')}
+              className="flex-1 py-2 rounded-xl text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors">
+              {t('未採点を一括B', 'Fill blanks: B')}
+            </button>
+            <button onClick={bulkClearGrades}
+              title={t('この級の評価をすべて消す', 'Clear all evaluations for this grade')}
+              className="flex-1 py-2 rounded-xl text-[11px] font-black bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100 transition-colors">
+              {t('全クリア', 'Clear all')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ===== 審査基準リスト ===== */}
       {loading ? (
         <CriteriaListSkeleton count={4} />
@@ -2429,6 +2549,17 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
         <div className="bg-white rounded-[22px] p-10 text-center border-2 border-dashed border-gray-100">
           <p className="text-[11px] font-black text-gray-300 uppercase tracking-widest">審査基準データなし</p>
           <p className="text-[10px] text-gray-200 mt-1">CSVをインポートしてください</p>
+        </div>
+      ) : groupedCriteria.length === 0 ? (
+        <div className="bg-white rounded-[22px] p-8 text-center border-2 border-dashed border-gray-100">
+          <p className="text-[11px] font-black text-gray-300">
+            {scoreFilter === 'unscored'
+              ? t('未採点の項目はありません（すべて採点済み）', 'No unscored items — all done')
+              : t('該当する項目がありません', 'No matching items')}
+          </p>
+          <button onClick={() => setScoreFilter('all')} className="mt-2 text-[11px] font-black text-[#001f3f] underline">
+            {t('すべて表示', 'Show all')}
+          </button>
         </div>
       ) : (
         <div>
@@ -2463,14 +2594,8 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
                     {canScore(adminRole) ? (
                       <div className="grid grid-cols-4 gap-1.5">
                         {[{ g: 'A', pt: '10' }, { g: 'B', pt: '6' }, { g: 'C', pt: '3' }, { g: 'D', pt: '0' }].map(({ g, pt }) => (
-                          <button key={g} onClick={() => {
-                            setCriteria((prev: any[]) => prev.map((item: any) => item.id === c.id ? { ...item, grade: g } : item));
-                            if (viewGrade === currentKyu) {
-                              setCurrentGradeEvals((prev: any[]) => prev.map((item: any) => item.id === c.id ? { ...item, grade: g } : item));
-                            }
-                            supabase.from('evaluations').upsert({ student_id: student.id, criterion_id: c.id, grade: g }, { onConflict: 'student_id,criterion_id' }).then();
-                          }}
-                          className="py-2.5 rounded-xl flex flex-col items-center justify-center transition-all"
+                          <button key={g} onClick={() => scoreOne(c, g)}
+                          className="min-h-[48px] py-3 rounded-xl flex flex-col items-center justify-center transition-all active:scale-95"
                           style={c.grade === g
                             ? { backgroundColor: vbc.bg, color: vbc.text }
                             : { backgroundColor: '#f5f5f5', color: '#c0c0c0' }}>
@@ -2481,7 +2606,7 @@ function EvaluationPanel({ student: initialStudent, onRefresh, allBranchList, ad
                       </div>
                     ) : (
                       <div className="py-3 rounded-xl font-black text-center text-xl"
-                        style={{ backgroundColor: vbc.light, color: vbc.bg }}>{c.grade}</div>
+                        style={{ backgroundColor: vbc.light, color: vbc.bg }}>{c.grade || '—'}</div>
                     )}
                   </div>
                 ))}

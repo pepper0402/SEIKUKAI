@@ -80,6 +80,15 @@ export default function StudentDashboard({ profile, onReload, familyProfiles, on
   const isEligible = canApply;  // 互換
   const progressPct = maxScore > 0 ? Math.min(totalScore, 100) : 0;
 
+  // モチベーション可視化用の集計（できた / あと一歩 / 未評価）
+  const doneCount    = useMemo(() => currentCriteria.filter(c => c.grade === 'A' || c.grade === 'B').length, [currentCriteria]);
+  const almostCount  = useMemo(() => currentCriteria.filter(c => c.grade === 'C').length, [currentCriteria]);
+  const notYetCount  = useMemo(() => currentCriteria.filter(c => !c.grade || c.grade === 'D').length, [currentCriteria]);
+  // 合格(目安)まで伸ばせる余地のある項目数（A/B以外）
+  const improvableCount = almostCount + notYetCount;
+  const ptsToApply = Math.max(0, APPLY_SCORE - totalScore);
+  const ptsToPass  = Math.max(0, PASS_SCORE - totalScore);
+
   const groupedCriteria = useMemo(() => {
     const groups: Record<string, any[]> = {};
     currentCriteria.forEach(c => {
@@ -268,6 +277,67 @@ export default function StudentDashboard({ profile, onReload, familyProfiles, on
             </div>
           )}
         </div>
+
+        {/* ===== 次の一歩カード（あと何で合格できるか） ===== */}
+        {viewMode === 'current' && maxScore > 0 && (
+          <div className="bg-white rounded-[22px] p-5 shadow-md mb-4">
+            <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-2">{t('次の一歩', 'Next Step')}</p>
+
+            {/* 状況メッセージ */}
+            {confidentPass ? (
+              <p className="text-[15px] font-black text-green-600 leading-snug">🎉 {t('合格圏です！審査に申し込めます', "You're in the pass zone — ready to apply!")}</p>
+            ) : canApply ? (
+              <p className="text-[15px] font-black text-amber-600 leading-snug">
+                ✋ {t('審査に申し込めます', 'You can apply for the exam')}
+                <span className="block text-[11px] font-bold text-gray-400 mt-0.5">{t(`合格の目安まであと ${ptsToPass} 点`, `${ptsToPass} pts to the pass mark`)}</span>
+              </p>
+            ) : !allRequiredPassed ? (
+              <p className="text-[15px] font-black text-red-500 leading-snug">
+                {t('必須項目をクリアすると申し込めます', 'Clear the required items to apply')}
+              </p>
+            ) : (
+              <p className="text-[15px] font-black text-[#001f3f] leading-snug">
+                {t(`審査可まであと ${ptsToApply} 点`, `${ptsToApply} pts to apply`)}
+                <span className="block text-[11px] font-bold text-gray-400 mt-0.5">{t(`伸ばせる項目があと ${improvableCount} 個あります`, `${improvableCount} items can still improve`)}</span>
+              </p>
+            )}
+
+            {/* できた / あと一歩 / 未評価 */}
+            <div className="grid grid-cols-3 gap-2 mt-4">
+              {[
+                { label: t('できた', 'Done'),     n: doneCount,   color: '#16a34a', bg: '#dcfce7' },
+                { label: t('あと一歩', 'Almost'), n: almostCount, color: '#d97706', bg: '#fef3c7' },
+                { label: t('未評価', 'Not yet'),  n: notYetCount, color: '#64748b', bg: '#f1f5f9' },
+              ].map(s => (
+                <div key={s.label} className="rounded-2xl py-2.5 text-center" style={{ backgroundColor: s.bg }}>
+                  <p className="text-2xl font-black leading-none" style={{ color: s.color }}>{s.n}</p>
+                  <p className="text-[9px] font-black mt-1" style={{ color: s.color }}>{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* 必須未達の具体名（最も行動に直結） */}
+            {unmetRequired.length > 0 && (
+              <div className="mt-4 bg-red-50 rounded-2xl p-3">
+                <p className="text-[10px] font-black text-red-600 mb-1.5">★ {t(`あと ${unmetRequired.length} 個の必須項目`, `${unmetRequired.length} required item(s) left`)}</p>
+                <div className="space-y-1">
+                  {unmetRequired.slice(0, 4).map((c: any) => (
+                    <div key={c.id} className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-bold text-red-800 leading-snug truncate">{c.examination_content}</p>
+                      <span className="shrink-0 text-[9px] font-black text-white px-1.5 py-0.5 rounded"
+                        style={{ backgroundColor: c.grade === 'C' ? '#d97706' : '#94a3b8' }}>
+                        {t('現在', 'now')} {c.grade || '—'}
+                      </span>
+                    </div>
+                  ))}
+                  {unmetRequired.length > 4 && (
+                    <p className="text-[10px] font-bold text-red-400">{t(`ほか ${unmetRequired.length - 4} 件`, `+${unmetRequired.length - 4} more`)}</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ===== 試合情報リンク ===== */}
         <a href="https://fight-port.vercel.app/" target="_blank" rel="noreferrer"
