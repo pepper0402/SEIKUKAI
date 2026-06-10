@@ -5,16 +5,21 @@ import { Session } from '@supabase/supabase-js'
 import LoginPage from './pages/LoginPage'
 import StudentDashboard from './pages/StudentDashboard'
 import AdminDashboard from './pages/AdminDashboard'
+import ResetPasswordPage from './pages/ResetPasswordPage'
+import { ToastProvider } from './components/Toast'
 
 const ADMIN_MODE_STORAGE_KEY = 'seikukai.isAdminMode'
 const SELECTED_PROFILE_STORAGE_KEY = 'seikukai.selectedProfileId'
 
-export default function App() {
+function AppInner() {
   const { t } = useLang()
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [familyProfiles, setFamilyProfiles] = useState<Profile[]>([])
   const [ready, setReady]     = useState(false)
+  // PASSWORD_RECOVERY 検出時のみ true。リカバリーセッション中のみ新パスワード入力画面を出す。
+  const [recoveryMode, setRecoveryMode] = useState(false)
+  const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null)
 
   // 初期値: URLクエリ > localStorage（明示的に保存された選択） > false
   const [isAdminMode, setIsAdminMode] = useState(() => {
@@ -35,18 +40,17 @@ export default function App() {
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
-      // PASSWORD_RECOVERY: パスワードリセットリンクをクリックして来た場合。
-      // この時、もし他のユーザー（特に管理者）がログイン中だったら、そのセッションが
-      // 上書きされる事故になる。明示的に警告 + 強制ログアウトして安全にやり直す。
+      // PASSWORD_RECOVERY: リセットリンク経由で来た場合。
+      // 専用画面 (ResetPasswordPage) に遷移して、updateUser({ password }) で
+      // リカバリーセッションへ新パスワードを設定する。
+      // 注意: 管理者がログイン中に生徒のリカバリーリンクを開くと管理者のセッションが
+      // 上書きされる事故が起きる。recoveryMode=true 中は他の画面を出さないことで
+      // 「気付かず操作する」事故を防ぐ。
       if (event === 'PASSWORD_RECOVERY') {
-        alert(
-          'パスワードリセット用リンクが検出されました。\n\n' +
-          'セキュリティ保護のため、現在のセッションを終了します。\n' +
-          '新しいパスワードを設定するには、もう一度メールのリンクをクリックしてください。\n\n' +
-          '※ 管理者の方は、生徒のリセットリンクを絶対に開かないでください。\n' +
-          '　 生徒のパスワード再設定は管理画面の「一時パスワード生成」をご利用ください。'
-        )
-        supabase.auth.signOut()
+        setSession(s)
+        setRecoveryEmail(s?.user?.email ?? null)
+        setRecoveryMode(true)
+        setReady(true)
         return
       }
       setSession(s)
@@ -60,6 +64,8 @@ export default function App() {
         localStorage.removeItem(ADMIN_MODE_STORAGE_KEY)
         localStorage.removeItem(SELECTED_PROFILE_STORAGE_KEY)
         setIsAdminMode(false)
+        setRecoveryMode(false)
+        setRecoveryEmail(null)
       }
     })
 
@@ -87,11 +93,8 @@ export default function App() {
   }, [profile])
 
   // 家族運用対応: login_email OR parent_login_email に一致する全プロファイル取得
-  // 複数あればlocalStorage保存の選択 or 先頭を current に
   const loadProfile = async (email: string) => {
     const lower = email.trim().toLowerCase()
-
-    // login_email または parent_login_email で一致するプロファイルを全件
     const { data: rows, error } = await supabase
       .from('profiles')
       .select('*')
@@ -109,7 +112,6 @@ export default function App() {
       return
     }
 
-    // 前回選択したプロファイルIDがあればそれを。無ければ自分のlogin_email一致を優先、それもなければ先頭
     const savedId = localStorage.getItem(SELECTED_PROFILE_STORAGE_KEY)
     let selected = list.find(p => p.id === savedId)
     if (!selected) {
@@ -126,7 +128,6 @@ export default function App() {
     setProfile(target)
   }
 
-  // モード切り替え（トグルボタンからの明示的な操作）
   const toggleMode = (toAdmin: boolean) => {
     const newUrl = toAdmin ? '?admin=true' : window.location.pathname
     window.history.pushState({}, '', newUrl)
@@ -140,12 +141,24 @@ export default function App() {
     </div>
   )
 
+  // ★ パスワードリセット中: 専用画面のみ表示（管理画面/生徒画面を出さない）
+  if (recoveryMode) {
+    return (
+      <ResetPasswordPage
+        email={recoveryEmail}
+        onDone={() => {
+          setRecoveryMode(false)
+          setRecoveryEmail(null)
+        }}
+      />
+    )
+  }
+
   // 未ログイン時：切り替えリンク付きのログイン画面を表示
   if (!session || !profile) {
     return (
       <div className="relative">
         <LoginPage admin={isAdminMode} />
-        {/* 切り替えリンク */}
         <div className="fixed bottom-8 left-0 right-0 text-center">
           <button
             onClick={() => toggleMode(!isAdminMode)}
@@ -193,7 +206,7 @@ export default function App() {
     )
   }
 
-  // 生徒モードでの表示（家族複数人の場合は切替UIを渡す）
+  // 生徒モードでの表示
   return (
     <StudentDashboard
       profile={profile}
@@ -202,5 +215,13 @@ export default function App() {
       onSwitchProfile={familyProfiles.length > 1 ? switchProfile : undefined}
       onSwitchToAdmin={profile.is_admin ? () => toggleMode(true) : undefined}
     />
+  )
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppInner />
+    </ToastProvider>
   )
 }

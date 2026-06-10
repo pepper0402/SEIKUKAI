@@ -110,52 +110,73 @@ Deno.serve(async (req: Request) => {
       return json({ error: '自分自身のパスワードは「アカウント設定」から変更してください' }, 400)
     }
 
-    // Step 5: 一時パスワード生成 → Auth user の存在に応じて分岐
+    // Step 5: 一時パスワード生成 → Auth user 解決（探索優先）
     const tempPassword = generateTempPassword(12)
+    const lowerEmail = student.login_email.toLowerCase()
     let targetUserId = student.user_id as string | null
     let createdNewAuth = false
+    let needsProfileLink = false
 
+    // (a) profile.user_id が示す Auth user を更新試行（あれば）
     if (targetUserId) {
-      // 既存 Auth user のパスワード更新
       const { error: updErr } = await adminSupabase.auth.admin.updateUserById(targetUserId, {
         password: tempPassword,
       })
       if (updErr) {
-        return json({ error: 'パスワード更新失敗: ' + updErr.message }, 500)
+        // user_id が古い/auth.users に存在しない可能性 → 探索フォールバック
+        console.log('[updateUserById failed for stored user_id]', targetUserId, updErr.message)
+        targetUserId = null
+        needsProfileLink = true
       }
-    } else {
-      // Auth user が未作成 → このメールで既存ユーザーがいないか確認
-      // listUsers でメール一致を探す
-      const { data: existing, error: listErr } = await adminSupabase.auth.admin.listUsers()
-      if (listErr) {
-        return json({ error: 'Auth ユーザー一覧取得失敗: ' + listErr.message }, 500)
-      }
-      const matched = existing.users.find(u => (u.email ?? '').toLowerCase() === student.login_email.toLowerCase())
+    }
 
-      if (matched) {
-        // 同じメールの Auth user が既にいる → そのパスワードを更新 + profile に紐づけ
-        targetUserId = matched.id
+    // (b) user_id が無い or 失敗した場合: メールで既存ユーザー検索
+    if (!targetUserId) {
+      let found: { id: string } | null = null
+      let page = 1
+      const perPage = 1000
+      for (let i = 0; i < 20; i++) {  // 最大20,000ユーザー
+        const { data: pageData, error: listErr } = await adminSupabase.auth.admin.listUsers({ page, perPage })
+        if (listErr) {
+          return json({ error: 'Auth ユーザー検索失敗: ' + listErr.message }, 500)
+        }
+        const match = pageData.users.find(u => (u.email ?? '').toLowerCase() === lowerEmail)
+        if (match) { found = match; break }
+        if (pageData.users.length < perPage) break
+        page++
+      }
+
+      if (found) {
+        // 既存 Auth user 発見 → パスワード更新
+        targetUserId = found.id
         const { error: updErr } = await adminSupabase.auth.admin.updateUserById(targetUserId, {
           password: tempPassword,
         })
         if (updErr) {
           return json({ error: '既存 Auth ユーザーのパスワード更新失敗: ' + updErr.message }, 500)
         }
+        needsProfileLink = true
       } else {
-        // 新規 Auth user を作成
+        // 新規 Auth user 作成
         const { data: created, error: createErr } = await adminSupabase.auth.admin.createUser({
-          email: student.login_email,
+          email: lowerEmail,
           password: tempPassword,
-          email_confirm: true,  // 確認メールは送らず即時有効化（管理者操作のため）
+          email_confirm: true,
         })
-        if (createErr || !created.user) {
-          return json({ error: 'Auth ユーザー作成失敗: ' + (createErr?.message ?? 'unknown') }, 500)
+        if (createErr || !created?.user) {
+          return json({
+            error: 'Auth ユーザー作成失敗: ' + (createErr?.message ?? 'unknown'),
+            email: lowerEmail,
+          }, 500)
         }
         targetUserId = created.user.id
         createdNewAuth = true
+        needsProfileLink = true
       }
+    }
 
-      // profile.user_id を紐づけ
+    // (c) profile.user_id 紐づけ（探索/作成時のみ）
+    if (needsProfileLink && targetUserId) {
       const { error: profUpdErr } = await adminSupabase
         .from('profiles')
         .update({ user_id: targetUserId })

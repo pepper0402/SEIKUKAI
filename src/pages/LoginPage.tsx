@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { supabase, APP_URL } from '../lib/supabase'
 import { useLang, LangToggle } from '../lib/i18n'
+import { useToast } from '../components/Toast'
 
 export default function LoginPage({ admin }: { admin?: boolean }) {
   const { t } = useLang()
+  const toast = useToast()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -53,14 +55,17 @@ export default function LoginPage({ admin }: { admin?: boolean }) {
       redirectTo: `${APP_URL}/`,
     });
     setResetting(false);
-    if (error) setErrorMsg(t(
-      'リセットメール送信に失敗しました: ' + error.message,
-      'Failed to send reset email: ' + error.message
-    ));
-    else alert(t(
-      'パスワードリセット用のメールを送信しました。受信箱をご確認ください。',
-      'Password reset email sent. Please check your inbox.'
-    ));
+    if (error) {
+      setErrorMsg(t(
+        'リセットメール送信に失敗しました: ' + error.message,
+        'Failed to send reset email: ' + error.message
+      ));
+    } else {
+      toast.success(t(
+        'パスワードリセット用のメールを送信しました。受信箱をご確認ください。',
+        'Password reset email sent. Please check your inbox.'
+      ));
+    }
   };
 
   return (

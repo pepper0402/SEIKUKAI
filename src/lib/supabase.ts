@@ -204,7 +204,9 @@ export const getBeltForProfile = (profile: Pick<Profile, 'kyu' | 'birthday' | 'k
   if (!profile) return '白帯'
   const k = normalizeKyu(profile.kyu)
   const ippan = isIppan(profile)
-  if (k === '無級' || k.includes('準10級')) return '白帯'
+  // 白帯は無級のみ。準10級は黄帯（BELT_GRADE_MAP と整合）。
+  // 注: '準10級'.includes('10級') は true なので、無級以外の10級系はすべて黄帯に落ちる。
+  if (k === '無級') return '白帯'
   if (k.includes('10級') || k.includes('9級')) return '黄帯'
   if (k.includes('8級')  || k.includes('7級')) return '青帯'
   if (k.includes('6級')  || k.includes('5級')) return ippan ? '紫帯' : '橙帯'
