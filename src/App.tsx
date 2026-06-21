@@ -69,8 +69,27 @@ function AppInner() {
       }
     })
 
+    // 管理者が昇級処理した際に生徒側の profile state をリアルタイムで更新する
+    const profileChannel = supabase
+      .channel('profile-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        (payload) => {
+          const updated = payload.new as Profile
+          setFamilyProfiles(prev =>
+            prev.map(p => p.id === updated.id ? { ...p, ...updated } : p)
+          )
+          setProfile(prev =>
+            prev?.id === updated.id ? { ...prev, ...updated } : prev
+          )
+        }
+      )
+      .subscribe()
+
     return () => {
       subscription.unsubscribe()
+      profileChannel.unsubscribe()
       window.removeEventListener('popstate', handlePopState)
     }
   }, [])
@@ -133,6 +152,10 @@ function AppInner() {
     window.history.pushState({}, '', newUrl)
     setIsAdminMode(toAdmin)
     localStorage.setItem(ADMIN_MODE_STORAGE_KEY, String(toAdmin))
+    // 生徒画面に切替時は最新プロファイルを再取得（昇級後の帯色を正しく反映）
+    if (!toAdmin && session?.user?.email) {
+      loadProfile(session.user.email)
+    }
   }
 
   if (!ready) return (
